@@ -16,12 +16,11 @@ class AppColors {
   static const border = Color(0xFF3F3F5F);
   static const textMain = Colors.white;
   static const accentBlue = Color(0xFF40C4FF);
-  static const accentGreen = Color(0xFF00E676);
-  static const accentRed = Color(0xFFFF5252);
+  static const accentGreen = Color(0xFF00E676); // Used for + values
+  static const accentRed = Color(0xFFFF5252);   // Used for - values
   static const accentPurple = Color(0xFF9B59B6);
   static const accentYellow = Color(0xFFF39C12);
   static const btnBg = Color(0xFF32324A);
-  static const wheatWhite = Color(0xFFF5DEB3); // Added Wheat White
 }
 
 class RobotControllerApp extends StatelessWidget {
@@ -77,7 +76,7 @@ class _ControllerScreenState extends State<ControllerScreen> {
   bool _servoOn = false;
   String _mode = "Unknown"; // Sim, Real
   String _errorMsg = "No error";
-  String _lastErrorMsg = "No error";
+  String _lastErrorMsg = "No error"; 
   bool _isStarted = false;
   bool _isPaused = false;
   double _globalSpeed = 50.0;
@@ -158,7 +157,6 @@ class _ControllerScreenState extends State<ControllerScreen> {
       final data = jsonDecode(message);
       
       if (data['type'] == 'connection_rejected') {
-        // Fallback catch if your server sends an explicit JSON rejection instead of just closing
         _showConnectionRejectedPopup();
         _disconnect();
       }
@@ -267,7 +265,6 @@ class _ControllerScreenState extends State<ControllerScreen> {
     );
   }
 
-  // Professional Rejection Popup
   void _showConnectionRejectedPopup() {
     if (!mounted) return;
     showDialog(
@@ -589,7 +586,7 @@ class _ControllerScreenState extends State<ControllerScreen> {
                         Expanded(child: _buildJogButton("J$i-", height: 60)),
                         Padding(
                           padding: const EdgeInsets.symmetric(horizontal: 20),
-                          child: Text("AXIS $i", style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 16, color: Colors.grey)),
+                          child: Text("Joints $i", style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 16, color: Colors.grey)),
                         ),
                         Expanded(child: _buildJogButton("J$i+", height: 60)),
                       ],
@@ -675,8 +672,14 @@ class _ControllerScreenState extends State<ControllerScreen> {
     );
   }
 
-  // UPDATED: Wheat white background with high-contrast text.
+  // UPDATED: Pure white background with dynamic text color based on + or -.
   Widget _buildJogButton(String label, {double? width, double height = 50}) {
+    Color getTextColor(String lbl) {
+      if (lbl.contains('+')) return AppColors.accentGreen;
+      if (lbl.contains('-')) return AppColors.accentRed;
+      return Colors.black87; // Fallback just in case
+    }
+
     return GestureDetector(
       onTapDown: (_) => _onPadInteract(label, true),
       onTapUp: (_) => _onPadInteract(label, false),
@@ -685,7 +688,7 @@ class _ControllerScreenState extends State<ControllerScreen> {
         width: width, height: height,
         margin: const EdgeInsets.all(4),
         decoration: BoxDecoration(
-          color: AppColors.wheatWhite, // WHEAT WHITE BACKGROUND
+          color: Colors.white, // CHANGED TO PURE WHITE
           borderRadius: BorderRadius.circular(8),
           border: Border.all(color: AppColors.border, width: 1.5),
           boxShadow: const [BoxShadow(color: Colors.black26, offset: Offset(0, 4), blurRadius: 4)],
@@ -693,10 +696,10 @@ class _ControllerScreenState extends State<ControllerScreen> {
         alignment: Alignment.center,
         child: Text(
           label, 
-          style: const TextStyle(
+          style: TextStyle(
             fontWeight: FontWeight.bold, 
             fontSize: 18, 
-            color: Colors.black87 // DARK TEXT FOR WHEAT BACKGROUND
+            color: getTextColor(label) // DYNAMIC TEXT COLOR APPLIED
           ),
         ),
       ),

@@ -439,6 +439,11 @@ class _ControllerScreenState extends State<ControllerScreen> {
           ElevatedButton(
             style: ElevatedButton.styleFrom(backgroundColor: AppColors.accentRed),
             onPressed: () {
+              // Optimistically remove from list immediately for fast UX
+              setState(() {
+                if (index >= 0 && index < _tpList.length) _tpList.removeAt(index);
+              });
+              
               _sendCommand('DELETE_TP_INDEX', index); 
               Navigator.pop(ctx);
             },
@@ -491,7 +496,23 @@ class _ControllerScreenState extends State<ControllerScreen> {
           ElevatedButton(
             style: ElevatedButton.styleFrom(backgroundColor: AppColors.accentBlue),
             onPressed: () {
+              // 1. Tell backend which index we are interacting with
+              _sendCommand('SELECT_TP_INDEX', index);
+              
+              // 2. Send the actual modifcation payload
               _sendModifyCommand(nameCtrl.text, xCtrl.text, yCtrl.text, zCtrl.text);
+              
+              // 3. Optimistic Update: Move point to the end to reflect server behavior instantly
+              setState(() {
+                if (index >= 0 && index < _tpList.length) {
+                  var modifiedItem = _tpList.removeAt(index);
+                  modifiedItem['name'] = nameCtrl.text;
+                  // Fast format, backend WS update will strictly correct formatting in 100ms
+                  modifiedItem['value'] = "x:${xCtrl.text} y:${yCtrl.text} z:${zCtrl.text}";
+                  _tpList.add(modifiedItem); // Appends to the end
+                }
+              });
+
               Navigator.pop(ctx);
             },
             child: const Text("CONFIRM", style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold)),

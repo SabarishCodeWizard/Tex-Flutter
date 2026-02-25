@@ -15,6 +15,7 @@ class AppColors {
   static const bgPanel = Color(0xFF27273A);
   static const border = Color(0xFF3F3F5F);
   static const textMain = Colors.white;
+  static const textSec = Color(0xFFB0B0C0);
   static const accentBlue = Color(0xFF40C4FF);
   static const accentGreen = Color(0xFF00E676); 
   static const accentRed = Color(0xFFFF5252); 
@@ -59,7 +60,7 @@ class ControllerScreen extends StatefulWidget {
 
 class _ControllerScreenState extends State<ControllerScreen> {
   // --- STATE VARIABLES ---
-  final TextEditingController _ipController = TextEditingController(text: "192.168.1.42");
+  final TextEditingController _ipController = TextEditingController(text: "192.168.1.51");
   final TextEditingController _mmSpeedCtrl = TextEditingController(text: "50.0");
   final TextEditingController _degSpeedCtrl = TextEditingController(text: "50.0");
 
@@ -80,14 +81,19 @@ class _ControllerScreenState extends State<ControllerScreen> {
   bool _isStarted = false;
   bool _isPaused = false;
   double _globalSpeed = 50.0;
+  double _currentSpeedOp = 0.0;
   String _frame = "Base";
   String _motionType = "JOG"; 
-  String _tpRunMode = "TP Mode"; // Default from C++
+  String _tpRunMode = "TP Mode"; 
+  
+  // File Tracking State
+  String _currentTpName = "None"; 
+  List<String> _tpFileList = []; // Stores the raw file strings from backend
 
   // --- LIVE DATA ---
   Map<String, double> _cartesian = {'x': 0.0, 'y': 0.0, 'z': 0.0, 'rx': 0.0, 'ry': 0.0, 'rz': 0.0};
   Map<String, double> _joints = {'j1': 0.0, 'j2': 0.0, 'j3': 0.0, 'j4': 0.0, 'j5': 0.0, 'j6': 0.0};
-  List<Map<String, dynamic>> _tpList = []; 
+  List<Map<String, dynamic>> _tpList = []; // The actual target points inside a file
 
   String _currentView = "MAIN";
 
@@ -172,6 +178,14 @@ class _ControllerScreenState extends State<ControllerScreen> {
           _isStarted = data['started'] ?? false;
           _isPaused = data['paused'] ?? false;
           _tpRunMode = data['tp_run_mode'] ?? "TP Mode";
+          _currentSpeedOp = (data['speed_op'] as num?)?.toDouble() ?? 0.0;
+          
+          _currentTpName = data['current_tp_name'] ?? "None";
+
+          // Extract the TP File List (used for Opening/Deleting files)
+          if (data['tp_file_list'] != null) {
+            _tpFileList = List<String>.from(data['tp_file_list']);
+          }
 
           // Error handling
           String newError = data['error_message'] ?? "No error";
@@ -236,6 +250,11 @@ class _ControllerScreenState extends State<ControllerScreen> {
   }
 
   // --- VIEW SWITCHING LOGIC ---
+  void _openSpeed() {
+    SystemChrome.setPreferredOrientations([DeviceOrientation.portraitUp]);
+    setState(() => _currentView = "SPEED");
+  }
+
   void _openCartesian() {
     SystemChrome.setPreferredOrientations([DeviceOrientation.landscapeLeft, DeviceOrientation.landscapeRight]);
     setState(() => _currentView = "CARTESIAN");
@@ -252,7 +271,121 @@ class _ControllerScreenState extends State<ControllerScreen> {
   }
 
   // =========================================================================
-  // TP FEATURES (INSERT, MODIFY, DELETE, RUN, MODE)
+  // 1. TP FILE MANAGEMENT (NEW, OPEN, DELETE FILES)
+  // =========================================================================
+
+  void _showNewTpFileDialog() {
+    final nameCtrl = TextEditingController();
+    showDialog(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        backgroundColor: AppColors.bgPanel,
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12), side: const BorderSide(color: AppColors.accentBlue, width: 1)),
+        title: const Text("Create TP File", style: TextStyle(color: AppColors.accentBlue, fontWeight: FontWeight.bold)),
+        content: TextField(
+          controller: nameCtrl,
+          style: const TextStyle(color: Colors.white),
+          decoration: const InputDecoration(labelText: "File Name (e.g., job_01)", labelStyle: TextStyle(color: Colors.grey), border: OutlineInputBorder(), filled: true, fillColor: AppColors.bgMain),
+        ),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(ctx), child: const Text("CANCEL", style: TextStyle(color: Colors.grey))),
+          ElevatedButton(
+            style: ElevatedButton.styleFrom(backgroundColor: AppColors.accentBlue),
+            onPressed: () {
+              if (nameCtrl.text.isNotEmpty) {
+                _sendCommand('NEW_TP_FILE', nameCtrl.text); 
+                Navigator.pop(ctx);
+              }
+            },
+            child: const Text("CREATE", style: TextStyle(color: Colors.black, fontWeight: FontWeight.bold)),
+          )
+        ],
+      ),
+    );
+  }
+
+  void _showTpFileListSheet(String actionTitle) {
+    IconData actionIcon = actionTitle == "Open" ? Icons.folder_open : Icons.delete_forever;
+    Color actionColor = actionTitle == "Open" ? AppColors.accentYellow : AppColors.accentRed;
+
+    showModalBottomSheet(
+      context: context,
+      backgroundColor: AppColors.bgPanel,
+      isScrollControlled: true,
+      shape: const RoundedRectangleBorder(borderRadius: BorderRadius.vertical(top: Radius.circular(16))),
+      builder: (ctx) => Container(
+        height: MediaQuery.of(context).size.height * 0.6,
+        padding: const EdgeInsets.only(top: 10),
+        child: Column(
+          children: [
+            Container(width: 50, height: 5, decoration: BoxDecoration(color: Colors.grey[600], borderRadius: BorderRadius.circular(10))),
+            const SizedBox(height: 15),
+            Text("$actionTitle TP File", style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold, color: actionColor)),
+            const Divider(color: AppColors.border, height: 30),
+            Expanded(
+              child: _tpFileList.isEmpty 
+                ? const Center(child: Text("No files available.", style: TextStyle(color: Colors.grey, fontStyle: FontStyle.italic)))
+                : ListView.builder(
+                    itemCount: _tpFileList.length,
+                    itemBuilder: (ctx, i) {
+                      final fileData = _tpFileList[i].split('|');
+                      final fileName = fileData[0];
+                      final fileDate = fileData.length > 1 ? fileData[1] : "";
+                      
+                      return ListTile(
+                        leading: const Icon(Icons.insert_drive_file, color: AppColors.accentBlue),
+                        title: Text(fileName, style: const TextStyle(fontWeight: FontWeight.bold, color: Colors.white)),
+                        subtitle: Text(fileDate, style: const TextStyle(fontFamily: 'monospace', color: Colors.grey, fontSize: 12)),
+                        trailing: Icon(actionIcon, color: actionColor, size: 20),
+                        onTap: () {
+                          Navigator.pop(ctx);
+                          if (actionTitle == "Open") {
+                            _sendCommand('OPEN_TP_FILE', fileName);
+                          } else {
+                            _showDeleteFileConfirmDialog(fileName);
+                          }
+                        },
+                      );
+                    }
+                  ),
+            ),
+          ],
+        ),
+      )
+    );
+  }
+
+  void _showDeleteFileConfirmDialog(String fileName) {
+    showDialog(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        backgroundColor: AppColors.bgPanel,
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12), side: const BorderSide(color: AppColors.accentRed, width: 1)),
+        title: const Row(
+          children: [
+            Icon(Icons.warning_amber_rounded, color: AppColors.accentRed),
+            SizedBox(width: 10),
+            Text("Delete File?", style: TextStyle(color: AppColors.accentRed, fontWeight: FontWeight.bold, fontSize: 16)),
+          ],
+        ),
+        content: Text("Are you sure you want to permanently delete the file '$fileName'?", style: const TextStyle(color: Colors.white)),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(ctx), child: const Text("CANCEL", style: TextStyle(color: Colors.grey))),
+          ElevatedButton(
+            style: ElevatedButton.styleFrom(backgroundColor: AppColors.accentRed),
+            onPressed: () {
+              _sendCommand('DELETE_TP_FILE', fileName);
+              Navigator.pop(ctx);
+            },
+            child: const Text("DELETE", style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold)),
+          )
+        ],
+      )
+    );
+  }
+
+  // =========================================================================
+  // 2. TP POINT MANAGEMENT (INSERT, MODIFY, DELETE, RUN POINTS)
   // =========================================================================
 
   void _showTpModeDialog() {
@@ -292,7 +425,6 @@ class _ControllerScreenState extends State<ControllerScreen> {
       if (actionTitle == "Run") return Icons.play_arrow;
       return Icons.delete;
     }
-    
     Color getColor() {
       if (actionTitle == "Modify") return AppColors.accentBlue;
       if (actionTitle == "Run") return AppColors.accentGreen;
@@ -311,7 +443,7 @@ class _ControllerScreenState extends State<ControllerScreen> {
           children: [
             Container(width: 50, height: 5, decoration: BoxDecoration(color: Colors.grey[600], borderRadius: BorderRadius.circular(10))),
             const SizedBox(height: 15),
-            Text("Select TP to $actionTitle", style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold, color: getColor())),
+            Text("$actionTitle TP Point", style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold, color: getColor())),
             const Divider(color: AppColors.border, height: 30),
             Expanded(
               child: _tpList.isEmpty 
@@ -349,15 +481,13 @@ class _ControllerScreenState extends State<ControllerScreen> {
           children: [
             Icon(Icons.play_circle_fill, color: AppColors.accentGreen),
             SizedBox(width: 10),
-            Text("Run TP Point?", style: TextStyle(color: AppColors.accentGreen, fontWeight: FontWeight.bold, fontSize: 16)),
+            Text("Run Point?", style: TextStyle(color: AppColors.accentGreen, fontWeight: FontWeight.bold, fontSize: 16)),
           ],
         ),
         content: Column(
           mainAxisSize: MainAxisSize.min,
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            const Text("Are you sure you want to run this point?", style: TextStyle(color: Colors.white)),
-            const SizedBox(height: 15),
             Text("Name: ${tp['name']}", style: const TextStyle(color: AppColors.accentBlue, fontWeight: FontWeight.bold)),
             Text("Data: ${tp['value']}", style: const TextStyle(color: Colors.grey, fontSize: 13, fontFamily: 'monospace')),
           ],
@@ -367,9 +497,7 @@ class _ControllerScreenState extends State<ControllerScreen> {
           ElevatedButton(
             style: ElevatedButton.styleFrom(backgroundColor: AppColors.accentGreen),
             onPressed: () {
-              // 1. Select the index
               _sendCommand('SELECT_TP_INDEX', index); 
-              // 2. Execute the run command
               _sendCommand('RUN_TP');
               Navigator.pop(ctx);
             },
@@ -387,11 +515,11 @@ class _ControllerScreenState extends State<ControllerScreen> {
       builder: (ctx) => AlertDialog(
         backgroundColor: AppColors.bgPanel,
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12), side: const BorderSide(color: Color(0xFF00E5FF), width: 1)),
-        title: const Text("Insert New TP", style: TextStyle(color: Color(0xFF00E5FF), fontWeight: FontWeight.bold)),
+        title: const Text("Insert Target Point", style: TextStyle(color: Color(0xFF00E5FF), fontWeight: FontWeight.bold)),
         content: TextField(
           controller: nameCtrl,
           style: const TextStyle(color: Colors.white),
-          decoration: const InputDecoration(labelText: "TP Point Name", labelStyle: TextStyle(color: Colors.grey), border: OutlineInputBorder(), filled: true, fillColor: AppColors.bgMain),
+          decoration: const InputDecoration(labelText: "Point Name", labelStyle: TextStyle(color: Colors.grey), border: OutlineInputBorder(), filled: true, fillColor: AppColors.bgMain),
         ),
         actions: [
           TextButton(onPressed: () => Navigator.pop(ctx), child: const Text("CANCEL", style: TextStyle(color: Colors.grey))),
@@ -400,7 +528,7 @@ class _ControllerScreenState extends State<ControllerScreen> {
             onPressed: () {
               if (nameCtrl.text.isNotEmpty) {
                 _sendCommand('SET_TP_NAME', nameCtrl.text); 
-                _sendCommand('INSERT_TP');                  
+                _sendCommand('INSERT_TP');                 
                 Navigator.pop(ctx);
               }
             },
@@ -411,39 +539,20 @@ class _ControllerScreenState extends State<ControllerScreen> {
     );
   }
 
-  void _showDeleteConfirmDialog(int index, Map<String, dynamic> tp) {
+  void _showDeletePointConfirmDialog(int index, Map<String, dynamic> tp) {
     showDialog(
       context: context,
       builder: (ctx) => AlertDialog(
         backgroundColor: AppColors.bgPanel,
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12), side: const BorderSide(color: AppColors.accentRed, width: 1)),
-        title: const Row(
-          children: [
-            Icon(Icons.warning_amber_rounded, color: AppColors.accentRed),
-            SizedBox(width: 10),
-            Text("Confirm Deletion", style: TextStyle(color: AppColors.accentRed, fontWeight: FontWeight.bold, fontSize: 16)),
-          ],
-        ),
-        content: Column(
-          mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            const Text("Are you sure you want to delete this point?", style: TextStyle(color: Colors.white)),
-            const SizedBox(height: 15),
-            Text("Name: ${tp['name']}", style: const TextStyle(color: AppColors.accentBlue, fontWeight: FontWeight.bold)),
-            Text("Data: ${tp['value']}", style: const TextStyle(color: Colors.grey, fontSize: 13, fontFamily: 'monospace')),
-          ],
-        ),
+        title: const Text("Delete Point", style: TextStyle(color: AppColors.accentRed, fontWeight: FontWeight.bold)),
+        content: Text("Name: ${tp['name']}\n\nDelete this point?", style: const TextStyle(color: Colors.white)),
         actions: [
           TextButton(onPressed: () => Navigator.pop(ctx), child: const Text("CANCEL", style: TextStyle(color: Colors.grey))),
           ElevatedButton(
             style: ElevatedButton.styleFrom(backgroundColor: AppColors.accentRed),
             onPressed: () {
-              // Optimistically remove from list immediately for fast UX
-              setState(() {
-                if (index >= 0 && index < _tpList.length) _tpList.removeAt(index);
-              });
-              
+              setState(() { if (index >= 0 && index < _tpList.length) _tpList.removeAt(index); });
               _sendCommand('DELETE_TP_INDEX', index); 
               Navigator.pop(ctx);
             },
@@ -476,12 +585,12 @@ class _ControllerScreenState extends State<ControllerScreen> {
       builder: (ctx) => AlertDialog(
         backgroundColor: AppColors.bgPanel,
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12), side: const BorderSide(color: AppColors.accentBlue, width: 1)),
-        title: const Text("Modify TP Point", style: TextStyle(color: AppColors.accentBlue, fontWeight: FontWeight.bold)),
+        title: const Text("Modify Point", style: TextStyle(color: AppColors.accentBlue, fontWeight: FontWeight.bold)),
         content: SingleChildScrollView(
           child: Column(
             mainAxisSize: MainAxisSize.min,
             children: [
-              TextField(controller: nameCtrl, decoration: const InputDecoration(labelText: "TP Name")),
+              TextField(controller: nameCtrl, decoration: const InputDecoration(labelText: "Point Name")),
               const SizedBox(height: 10),
               TextField(controller: xCtrl, keyboardType: const TextInputType.numberWithOptions(decimal: true), decoration: const InputDecoration(labelText: "X Value (mm)", filled: true, fillColor: AppColors.bgMain)),
               const SizedBox(height: 10),
@@ -496,23 +605,16 @@ class _ControllerScreenState extends State<ControllerScreen> {
           ElevatedButton(
             style: ElevatedButton.styleFrom(backgroundColor: AppColors.accentBlue),
             onPressed: () {
-              // 1. Tell backend which index we are interacting with
               _sendCommand('SELECT_TP_INDEX', index);
-              
-              // 2. Send the actual modifcation payload
               _sendModifyCommand(nameCtrl.text, xCtrl.text, yCtrl.text, zCtrl.text);
-              
-              // 3. Optimistic Update: Move point to the end to reflect server behavior instantly
               setState(() {
                 if (index >= 0 && index < _tpList.length) {
                   var modifiedItem = _tpList.removeAt(index);
                   modifiedItem['name'] = nameCtrl.text;
-                  // Fast format, backend WS update will strictly correct formatting in 100ms
                   modifiedItem['value'] = "x:${xCtrl.text} y:${yCtrl.text} z:${zCtrl.text}";
-                  _tpList.add(modifiedItem); // Appends to the end
+                  _tpList.add(modifiedItem); 
                 }
               });
-
               Navigator.pop(ctx);
             },
             child: const Text("CONFIRM", style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold)),
@@ -613,6 +715,7 @@ class _ControllerScreenState extends State<ControllerScreen> {
 
   Widget _buildCurrentView() {
     switch (_currentView) {
+      case "SPEED": return _buildSpeedView();
       case "CARTESIAN": return _buildCartesianView();
       case "JOINTS": return _buildJointsView();
       case "MAIN": default: return _buildMainView();
@@ -666,14 +769,6 @@ class _ControllerScreenState extends State<ControllerScreen> {
                   ],
                 ),
                 const SizedBox(height: 25),
-                const Text("CONFIGURATION", style: TextStyle(color: AppColors.accentBlue, fontWeight: FontWeight.bold, fontSize: 12)),
-                const SizedBox(height: 10),
-                _buildDrawerDropdownRow("Lin Inc (mm)", _selectedMmInc, _mmOptions, (val) { setState(() => _selectedMmInc = val); if (val != "mm") _sendCommand('SET_MM_INC', val); }),
-                _buildDrawerInputRow("Lin Speed (mm/s)", _mmSpeedCtrl, "SET_MM_SPEED"),
-                _buildDrawerDropdownRow("Ang Inc (deg)", _selectedDegInc, _degOptions, (val) { setState(() => _selectedDegInc = val); if (val != "deg") _sendCommand('SET_DEG_INC', val); }),
-                _buildDrawerInputRow("Ang Speed (deg/s)", _degSpeedCtrl, "SET_DEG_SPEED"),
-                _buildFrameSelect(),
-                const SizedBox(height: 25),
                 const Text("UTILITIES", style: TextStyle(color: AppColors.accentBlue, fontWeight: FontWeight.bold, fontSize: 12)),
                 const SizedBox(height: 10),
                 _buildGenericButton("CLEAR ERRORS", () => _sendCommand('CLEAR_ERRORS')),
@@ -704,6 +799,7 @@ class _ControllerScreenState extends State<ControllerScreen> {
               children: [
                 _buildStatusItem("SERVO", _servoOn ? "ON" : "OFF", _servoOn ? AppColors.accentGreen : AppColors.accentRed),
                 _buildStatusItem("MODE", _mode, _mode == "Real" ? AppColors.accentRed : AppColors.accentYellow),
+                _buildStatusItem("OP SPEED", "${_currentSpeedOp.toStringAsFixed(1)}%", AppColors.accentBlue),
                 GestureDetector(onTap: () { if (_errorMsg != "No error") _showErrorPopup(_errorMsg); }, child: _buildStatusItem("ERR", _errorMsg == "No error" ? "OK" : "ERR", _errorMsg == "No error" ? AppColors.accentGreen : AppColors.accentRed)),
               ],
             ),
@@ -725,9 +821,72 @@ class _ControllerScreenState extends State<ControllerScreen> {
             ],
           ),
 
-          // --- TP CONTROLS ---
+          // ==========================================
+          // --- NEW: TP FILE MANAGEMENT SECTION ---
+          // ==========================================
           const SizedBox(height: 25),
-          const Text("TEACH PENDANT (TP) CONTROLS", style: TextStyle(color: Colors.grey, fontSize: 10, fontWeight: FontWeight.bold, letterSpacing: 1)),
+          Row(
+            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+            children: [
+              const Text("TP FILE MANAGEMENT", style: TextStyle(color: Colors.grey, fontSize: 10, fontWeight: FontWeight.bold, letterSpacing: 1)),
+              Container(
+                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+                decoration: BoxDecoration(
+                  color: AppColors.lcdBg,
+                  borderRadius: BorderRadius.circular(4),
+                  border: Border.all(color: AppColors.border)
+                ),
+                child: Text("ACTIVE: $_currentTpName", style: const TextStyle(color: AppColors.accentBlue, fontSize: 10, fontWeight: FontWeight.bold, fontFamily: 'monospace')),
+              ),
+            ],
+          ),
+          const SizedBox(height: 8),
+          
+          Row(
+            children: [
+              Expanded(
+                child: _buildColorButton(
+                  "+ NEW",
+                  AppColors.accentBlue, 
+                  _showNewTpFileDialog,
+                  padding: 0,
+                  fontSize: 12
+                ),
+              ),
+              const SizedBox(width: 8),
+              Expanded(
+                child: _buildColorButton(
+                  "📂 OPEN",
+                  AppColors.accentYellow, 
+                  () {
+                    _sendCommand('REFRESH_TP_FILES');
+                    Future.delayed(const Duration(milliseconds: 200), () => _showTpFileListSheet("Open"));
+                  },
+                  padding: 0,
+                  fontSize: 12
+                ),
+              ),
+              const SizedBox(width: 8),
+              Expanded(
+                child: _buildColorButton(
+                  "🗑 DELETE",
+                  AppColors.accentRed, 
+                  () {
+                    _sendCommand('REFRESH_TP_FILES');
+                    Future.delayed(const Duration(milliseconds: 200), () => _showTpFileListSheet("Delete"));
+                  },
+                  padding: 0,
+                  fontSize: 12
+                ),
+              ),
+            ],
+          ),
+
+          // ==========================================
+          // --- EXISTING: TP POINT CONTROLS ---
+          // ==========================================
+          const SizedBox(height: 20),
+          const Text("TP POINT OPERATIONS", style: TextStyle(color: Colors.grey, fontSize: 10, fontWeight: FontWeight.bold, letterSpacing: 1)),
           const SizedBox(height: 8),
           
           // ROW 1: Mode & Run
@@ -753,7 +912,7 @@ class _ControllerScreenState extends State<ControllerScreen> {
             ],
           ),
           const SizedBox(height: 8),
-          // ROW 2: Insert, Modify, Delete
+          // ROW 2: Insert, Modify, Delete (Points)
           Row(
             children: [
               Expanded(
@@ -778,7 +937,7 @@ class _ControllerScreenState extends State<ControllerScreen> {
                 child: _buildColorButton(
                   "- DELETE",
                   const Color(0xFFFF3D00), // Red-Orange
-                  () => _showTpSelectionSheet("Delete", _showDeleteConfirmDialog),
+                  () => _showTpSelectionSheet("Delete", _showDeletePointConfirmDialog),
                   padding: 0,
                 ),
               ),
@@ -786,20 +945,8 @@ class _ControllerScreenState extends State<ControllerScreen> {
           ),
 
           const SizedBox(height: 25),
-          const Text("Speed (%)", style: TextStyle(color: Colors.grey, fontSize: 13, fontWeight: FontWeight.bold)),
-          Row(
-            children: [
-              Expanded(
-                child: Slider(
-                  value: _globalSpeed, min: 1, max: 100, activeColor: AppColors.accentBlue,
-                  onChanged: (val) => setState(() => _globalSpeed = val),
-                  onChangeEnd: (val) => _sendCommand('SET_GLOBAL_SPEED', val.toInt()),
-                ),
-              ),
-              Text("${_globalSpeed.toInt()}%", style: const TextStyle(fontFamily: 'monospace', fontWeight: FontWeight.bold, fontSize: 16)),
-            ],
-          ),
           const Divider(color: AppColors.border, height: 40, thickness: 1),
+
           const Center(child: Text("SELECT MOTION TYPE", style: TextStyle(color: AppColors.accentBlue, letterSpacing: 1.5, fontWeight: FontWeight.bold))),
           const SizedBox(height: 15),
           Row(
@@ -809,10 +956,148 @@ class _ControllerScreenState extends State<ControllerScreen> {
               Expanded(child: _buildColorButton("MOVE (Click)", AppColors.accentBlue, () => setState(() => _motionType = "MOVE"), isActive: _motionType == "MOVE")),
             ],
           ),
+          
+          // --- NAVIGATION CARDS ---
           const SizedBox(height: 25),
+          GestureDetector(onTap: _openSpeed, child: _buildNavCard("SPEED SETTINGS", Icons.speed, "Configure Speeds & Increments")),
+          const SizedBox(height: 15),
           GestureDetector(onTap: _openCartesian, child: _buildNavCard("CARTESIAN PAD", Icons.screen_rotation, "Opens in Landscape")),
           const SizedBox(height: 15),
           GestureDetector(onTap: _openJoints, child: _buildNavCard("JOINTS PAD", Icons.precision_manufacturing, "Opens in Portrait")),
+        ],
+      ),
+    );
+  }
+
+  // --- 2.5. SPEED & CONFIGURATION PORTRAIT VIEW ---
+  Widget _buildSpeedView() {
+    return Column(
+      children: [
+        AppBar(
+          leading: IconButton(icon: const Icon(Icons.arrow_back), onPressed: _goBackToMain),
+          title: const Text("SPEED & CONFIGURATION", style: TextStyle(color: AppColors.accentBlue, fontWeight: FontWeight.bold, fontSize: 16)),
+          backgroundColor: Colors.transparent,
+          elevation: 0,
+        ),
+        Expanded(
+          child: SingleChildScrollView(
+            padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 10),
+            child: Container(
+              padding: const EdgeInsets.all(16),
+              decoration: BoxDecoration(
+                color: AppColors.bgPanel,
+                borderRadius: BorderRadius.circular(10),
+                border: Border.all(color: AppColors.border),
+                boxShadow: const [BoxShadow(color: Colors.black12, blurRadius: 8, offset: Offset(0, 4))]
+              ),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: [
+                  // Global Speed (%)
+                  Row(
+                    children: [
+                      const Expanded(flex: 2, child: Text("Global (%)", style: TextStyle(color: Colors.grey, fontSize: 13, fontWeight: FontWeight.bold))),
+                      Expanded(
+                        flex: 4,
+                        child: Slider(
+                          value: _globalSpeed, min: 1, max: 100, activeColor: AppColors.accentBlue,
+                          onChanged: (val) => setState(() => _globalSpeed = val),
+                          onChangeEnd: (val) => _sendCommand('SET_GLOBAL_SPEED', val.toInt()),
+                        ),
+                      ),
+                      Expanded(
+                        flex: 1,
+                        child: Text("${_globalSpeed.toInt()}%", style: const TextStyle(fontFamily: 'monospace', fontWeight: FontWeight.bold, fontSize: 14), textAlign: TextAlign.right),
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 10),
+                  const Divider(color: AppColors.border, thickness: 1),
+                  const SizedBox(height: 10),
+
+                  // Individual vertical config rows
+                  _buildConfigDropdown("Lin Inc (mm)", _selectedMmInc, _mmOptions, (val) {
+                    setState(() => _selectedMmInc = val);
+                    if (val != "mm") _sendCommand('SET_MM_INC', val);
+                  }),
+                  
+                  _buildConfigInput("Lin Speed (mm/s)", _mmSpeedCtrl, "SET_MM_SPEED"),
+                  
+                  _buildConfigDropdown("Ang Inc (deg)", _selectedDegInc, _degOptions, (val) {
+                    setState(() => _selectedDegInc = val);
+                    if (val != "deg") _sendCommand('SET_DEG_INC', val);
+                  }),
+                  
+                  _buildConfigInput("Ang Speed (deg/s)", _degSpeedCtrl, "SET_DEG_SPEED"),
+                  
+                  _buildConfigDropdown("Ref Frame", _frame, ["Base", "Tool", "User"], (val) {
+                    setState(() => _frame = val);
+                    _sendCommand('SET_FRAME', val);
+                  }),
+                ],
+              ),
+            ),
+          ),
+        ),
+      ],
+    );
+  }
+
+  Widget _buildConfigDropdown(String label, String value, List<String> items, Function(String) onChanged) {
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 8.0),
+      child: Row(
+        children: [
+          Expanded(flex: 4, child: Text(label, style: const TextStyle(color: Colors.grey, fontSize: 13, fontWeight: FontWeight.bold))),
+          Expanded(
+            flex: 5,
+            child: Container(
+              height: 40, padding: const EdgeInsets.symmetric(horizontal: 10),
+              decoration: BoxDecoration(color: const Color(0xFF0A0A12), border: Border.all(color: AppColors.border), borderRadius: BorderRadius.circular(6)),
+              child: DropdownButtonHideUnderline(
+                child: DropdownButton<String>(
+                  value: value, dropdownColor: AppColors.bgPanel, isDense: true, style: const TextStyle(color: Colors.white, fontFamily: 'monospace', fontSize: 13),
+                  items: items.map((val) => DropdownMenuItem(value: val, child: Text(val))).toList(),
+                  onChanged: (val) { if (val != null) onChanged(val); },
+                ),
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildConfigInput(String label, TextEditingController ctrl, String cmd) {
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 8.0),
+      child: Row(
+        children: [
+          Expanded(flex: 4, child: Text(label, style: const TextStyle(color: Colors.grey, fontSize: 13, fontWeight: FontWeight.bold))),
+          Expanded(
+            flex: 3,
+            child: SizedBox(
+              height: 40,
+              child: TextField(
+                controller: ctrl,
+                style: const TextStyle(fontFamily: 'monospace', fontSize: 13),
+                decoration: const InputDecoration(
+                  contentPadding: EdgeInsets.symmetric(horizontal: 10, vertical: 0),
+                  border: OutlineInputBorder(borderRadius: BorderRadius.all(Radius.circular(6))),
+                  filled: true, fillColor: Color(0xFF0A0A12)
+                ),
+              ),
+            ),
+          ),
+          const SizedBox(width: 8),
+          SizedBox(
+            height: 40, width: 45,
+            child: ElevatedButton(
+              style: ElevatedButton.styleFrom(backgroundColor: AppColors.btnBg, padding: EdgeInsets.zero, shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(6))),
+              onPressed: () => _sendCommand(cmd, ctrl.text),
+              child: const Icon(Icons.check, size: 20, color: AppColors.accentBlue)
+            )
+          )
         ],
       ),
     );
@@ -1051,80 +1336,6 @@ class _ControllerScreenState extends State<ControllerScreen> {
           child: Text(val, style: TextStyle(color: color, fontWeight: FontWeight.bold, fontFamily: 'monospace')),
         ),
       ],
-    );
-  }
-
-  Widget _buildDrawerInputRow(String label, TextEditingController ctrl, String cmd) {
-    return Padding(
-      padding: const EdgeInsets.symmetric(vertical: 6),
-      child: Row(
-        children: [
-          Expanded(flex: 3, child: Text(label, style: const TextStyle(color: Colors.grey, fontSize: 12))),
-          Expanded(
-            flex: 2,
-            child: SizedBox(
-              height: 35,
-              child: TextField(controller: ctrl, style: const TextStyle(fontFamily: 'monospace', fontSize: 13), decoration: const InputDecoration(contentPadding: EdgeInsets.symmetric(horizontal: 8, vertical: 0), border: OutlineInputBorder(), filled: true, fillColor: Color(0xFF0A0A12))),
-            ),
-          ),
-          const SizedBox(width: 6),
-          ElevatedButton(
-            style: ElevatedButton.styleFrom(backgroundColor: AppColors.btnBg, padding: EdgeInsets.zero, minimumSize: const Size(40, 35)),
-            onPressed: () => _sendCommand(cmd, ctrl.text),
-            child: const Icon(Icons.check, size: 16, color: AppColors.accentBlue),
-          ),
-        ],
-      ),
-    );
-  }
-
-  Widget _buildDrawerDropdownRow(String label, String value, List<String> items, Function(String) onChanged) {
-    return Padding(
-      padding: const EdgeInsets.symmetric(vertical: 6),
-      child: Row(
-        children: [
-          Expanded(flex: 3, child: Text(label, style: const TextStyle(color: Colors.grey, fontSize: 12))),
-          Expanded(
-            flex: 3,
-            child: Container(
-              height: 35, padding: const EdgeInsets.symmetric(horizontal: 8),
-              decoration: BoxDecoration(color: const Color(0xFF0A0A12), border: Border.all(color: AppColors.border), borderRadius: BorderRadius.circular(4)),
-              child: DropdownButtonHideUnderline(
-                child: DropdownButton<String>(
-                  value: value, dropdownColor: AppColors.bgPanel, isDense: true, style: const TextStyle(color: Colors.white, fontFamily: 'monospace', fontSize: 13),
-                  items: items.map((val) => DropdownMenuItem(value: val, child: Text(val))).toList(),
-                  onChanged: (val) { if (val != null) onChanged(val); },
-                ),
-              ),
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-
-  Widget _buildFrameSelect() {
-    return Padding(
-      padding: const EdgeInsets.symmetric(vertical: 6),
-      child: Row(
-        children: [
-          const Expanded(flex: 3, child: Text("Ref Frame", style: TextStyle(color: Colors.grey, fontSize: 12))),
-          Expanded(
-            flex: 3,
-            child: Container(
-              height: 35, padding: const EdgeInsets.symmetric(horizontal: 8),
-              decoration: BoxDecoration(color: const Color(0xFF0A0A12), border: Border.all(color: AppColors.border), borderRadius: BorderRadius.circular(4)),
-              child: DropdownButtonHideUnderline(
-                child: DropdownButton<String>(
-                  value: _frame, dropdownColor: AppColors.bgPanel, isDense: true, style: const TextStyle(color: Colors.white, fontFamily: 'monospace', fontSize: 13),
-                  items: ["Base", "Tool", "User"].map((val) => DropdownMenuItem(value: val, child: Text(val))).toList(),
-                  onChanged: (val) { setState(() => _frame = val!); _sendCommand('SET_FRAME', val); },
-                ),
-              ),
-            ),
-          ),
-        ],
-      ),
     );
   }
 

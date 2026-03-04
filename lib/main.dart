@@ -2,6 +2,7 @@ import 'dart:convert';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:web_socket_channel/web_socket_channel.dart';
+import 'dart:io';
 
 void main() {
   WidgetsFlutterBinding.ensureInitialized();
@@ -253,6 +254,11 @@ class _ControllerScreenState extends State<ControllerScreen> {
   void _openSpeed() {
     SystemChrome.setPreferredOrientations([DeviceOrientation.portraitUp]);
     setState(() => _currentView = "SPEED");
+  }
+  
+  void _openTpManagement() {
+    SystemChrome.setPreferredOrientations([DeviceOrientation.portraitUp]);
+    setState(() => _currentView = "TP_MANAGEMENT");
   }
 
   void _openCartesian() {
@@ -716,6 +722,7 @@ class _ControllerScreenState extends State<ControllerScreen> {
   Widget _buildCurrentView() {
     switch (_currentView) {
       case "SPEED": return _buildSpeedView();
+      case "TP_MANAGEMENT": return _buildTpManagementView();
       case "CARTESIAN": return _buildCartesianView();
       case "JOINTS": return _buildJointsView();
       case "MAIN": default: return _buildMainView();
@@ -763,9 +770,9 @@ class _ControllerScreenState extends State<ControllerScreen> {
                 const SizedBox(height: 10),
                 Row(
                   children: [
-                    Expanded(child: _buildColorButton("SIM", AppColors.accentPurple, () => _sendCommand('SET_SIM'), isActive: _mode == 'Sim', padding: 0)),
+                    Expanded(child: _buildColorButton("SIM", AppColors.accentPurple, () => _sendCommand('SET_SIM'), isActive: _mode == 'Sim', padding: 0,icon: Icons.biotech_outlined)),
                     const SizedBox(width: 10),
-                    Expanded(child: _buildColorButton("REAL", AppColors.accentRed, () => _sendCommand('SET_REAL'), isActive: _mode == 'Real', padding: 0)),
+                    Expanded(child: _buildColorButton("REAL", AppColors.accentRed, () => _sendCommand('SET_REAL'), isActive: _mode == 'Real', padding: 0,icon: Icons.precision_manufacturing)),
                   ],
                 ),
                 const SizedBox(height: 25),
@@ -775,7 +782,23 @@ class _ControllerScreenState extends State<ControllerScreen> {
                 const SizedBox(height: 10),
                 _buildGenericButton("CLEAR MARKS", () => _sendCommand('CLEAR_MARKS')),
                 const SizedBox(height: 10),
-                _buildColorButton("EXIT SYSTEM", AppColors.accentRed, () => _sendCommand('EXIT'), padding: 0),
+                _buildColorButton(
+                  "EXIT SYSTEM", 
+                  AppColors.accentRed, 
+                  () {
+                    // 1. Send command to the robot to shut down or disconnect safely
+                    _sendCommand('EXIT'); 
+                    
+                    // 2. Close the Flutter app
+                    if (Platform.isAndroid) {
+                      SystemNavigator.pop(); // Standard way to close on Android
+                    } else {
+                      exit(0); // Hard exit (use carefully)
+                    }
+                  }, 
+                  padding: 0,
+                  icon: Icons.exit_to_app, // Added an icon for clarity
+                ),
               ],
             ),
           ),
@@ -807,140 +830,17 @@ class _ControllerScreenState extends State<ControllerScreen> {
           const SizedBox(height: 20),
           Row(
             children: [
-              Expanded(child: _buildColorButton("SERVO TOGGLE", AppColors.accentYellow, () => _sendCommand('TOGGLE_SERVO'), padding: 0)),
+              Expanded(child: _buildColorButton("SERVO", AppColors.accentYellow, () => _sendCommand('TOGGLE_SERVO'), padding: 0, icon: Icons.power_settings_new)),
               const SizedBox(width: 10),
-              Expanded(child: _buildColorButton("🏠 HOME", AppColors.accentPurple, () => _sendCommand('TRIGGER_HOME'), padding: 0)),
+              Expanded(child: _buildColorButton("HOME", AppColors.accentPurple, () => _sendCommand('TRIGGER_HOME'), padding: 0, icon: Icons.home)),
             ],
           ),
           const SizedBox(height: 10),
           Row(
             children: [
-              Expanded(child: _buildColorButton(_isStarted ? "STOP" : "START", _isStarted ? AppColors.accentRed : AppColors.accentGreen, () => _sendCommand('TOGGLE_START'), padding: 0)),
+              Expanded(child: _buildColorButton(_isStarted ? "STOP" : "START", _isStarted ? AppColors.accentRed : AppColors.accentGreen, () => _sendCommand('TOGGLE_START'), padding: 0, icon: _isStarted ? Icons.stop_circle : Icons.play_circle_fill)),
               const SizedBox(width: 10),
-              Expanded(child: _buildColorButton(_isPaused ? "PAUSE" : "RUN", AppColors.accentYellow, () => _sendCommand('TOGGLE_PAUSE'), isActive: _isPaused, padding: 0)),
-            ],
-          ),
-
-          // ==========================================
-          // --- NEW: TP FILE MANAGEMENT SECTION ---
-          // ==========================================
-          const SizedBox(height: 25),
-          Row(
-            mainAxisAlignment: MainAxisAlignment.spaceBetween,
-            children: [
-              const Text("TP FILE MANAGEMENT", style: TextStyle(color: Colors.grey, fontSize: 10, fontWeight: FontWeight.bold, letterSpacing: 1)),
-              Container(
-                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
-                decoration: BoxDecoration(
-                  color: AppColors.lcdBg,
-                  borderRadius: BorderRadius.circular(4),
-                  border: Border.all(color: AppColors.border)
-                ),
-                child: Text("ACTIVE: $_currentTpName", style: const TextStyle(color: AppColors.accentBlue, fontSize: 10, fontWeight: FontWeight.bold, fontFamily: 'monospace')),
-              ),
-            ],
-          ),
-          const SizedBox(height: 8),
-          
-          Row(
-            children: [
-              Expanded(
-                child: _buildColorButton(
-                  "+ NEW",
-                  AppColors.accentBlue, 
-                  _showNewTpFileDialog,
-                  padding: 0,
-                  fontSize: 12
-                ),
-              ),
-              const SizedBox(width: 8),
-              Expanded(
-                child: _buildColorButton(
-                  "📂 OPEN",
-                  AppColors.accentYellow, 
-                  () {
-                    _sendCommand('REFRESH_TP_FILES');
-                    Future.delayed(const Duration(milliseconds: 200), () => _showTpFileListSheet("Open"));
-                  },
-                  padding: 0,
-                  fontSize: 12
-                ),
-              ),
-              const SizedBox(width: 8),
-              Expanded(
-                child: _buildColorButton(
-                  "🗑 DELETE",
-                  AppColors.accentRed, 
-                  () {
-                    _sendCommand('REFRESH_TP_FILES');
-                    Future.delayed(const Duration(milliseconds: 200), () => _showTpFileListSheet("Delete"));
-                  },
-                  padding: 0,
-                  fontSize: 12
-                ),
-              ),
-            ],
-          ),
-
-          // ==========================================
-          // --- EXISTING: TP POINT CONTROLS ---
-          // ==========================================
-          const SizedBox(height: 20),
-          const Text("TP POINT OPERATIONS", style: TextStyle(color: Colors.grey, fontSize: 10, fontWeight: FontWeight.bold, letterSpacing: 1)),
-          const SizedBox(height: 8),
-          
-          // ROW 1: Mode & Run
-          Row(
-            children: [
-              Expanded(
-                child: _buildColorButton(
-                  "⚙ $_tpRunMode",
-                  AppColors.accentBlue, 
-                  _showTpModeDialog,
-                  padding: 0,
-                ),
-              ),
-              const SizedBox(width: 8),
-              Expanded(
-                child: _buildColorButton(
-                  "▶ RUN TP",
-                  AppColors.accentGreen, 
-                  () => _showTpSelectionSheet("Run", _showRunConfirmDialog),
-                  padding: 0,
-                ),
-              ),
-            ],
-          ),
-          const SizedBox(height: 8),
-          // ROW 2: Insert, Modify, Delete (Points)
-          Row(
-            children: [
-              Expanded(
-                child: _buildColorButton(
-                  "+ INSERT",
-                  const Color(0xFF00E5FF), // Cyan
-                  _showInsertTpDialog,
-                  padding: 0,
-                ),
-              ),
-              const SizedBox(width: 8),
-              Expanded(
-                child: _buildColorButton(
-                  "✎ MODIFY",
-                  AppColors.accentBlue, 
-                  () => _showTpSelectionSheet("Modify", _showModifyTpDialog),
-                  padding: 0,
-                ),
-              ),
-              const SizedBox(width: 8),
-              Expanded(
-                child: _buildColorButton(
-                  "- DELETE",
-                  const Color(0xFFFF3D00), // Red-Orange
-                  () => _showTpSelectionSheet("Delete", _showDeletePointConfirmDialog),
-                  padding: 0,
-                ),
-              ),
+              Expanded(child: _buildColorButton(_isPaused ? "PAUSE" : "RUN", AppColors.accentYellow, () => _sendCommand('TOGGLE_PAUSE'), isActive: _isPaused, padding: 0, icon: _isPaused ? Icons.pause : Icons.play_arrow)),
             ],
           ),
 
@@ -961,11 +861,171 @@ class _ControllerScreenState extends State<ControllerScreen> {
           const SizedBox(height: 25),
           GestureDetector(onTap: _openSpeed, child: _buildNavCard("SPEED SETTINGS", Icons.speed, "Configure Speeds & Increments")),
           const SizedBox(height: 15),
+          GestureDetector(onTap: _openTpManagement, child: _buildNavCard("TP MANAGEMENT", Icons.folder_special, "Manage Files & Points")),
+          const SizedBox(height: 15),
           GestureDetector(onTap: _openCartesian, child: _buildNavCard("CARTESIAN PAD", Icons.screen_rotation, "Opens in Landscape")),
           const SizedBox(height: 15),
           GestureDetector(onTap: _openJoints, child: _buildNavCard("JOINTS PAD", Icons.precision_manufacturing, "Opens in Portrait")),
         ],
       ),
+    );
+  }
+
+  // --- 2.3. TP FILE MANAGEMENT VIEW ---
+  Widget _buildTpManagementView() {
+    return Column(
+      children: [
+        AppBar(
+          leading: IconButton(icon: const Icon(Icons.arrow_back), onPressed: _goBackToMain),
+          title: const Text("TP FILE MANAGEMENT", style: TextStyle(color: AppColors.accentBlue, fontWeight: FontWeight.bold, fontSize: 16)),
+          backgroundColor: Colors.transparent,
+          elevation: 0,
+        ),
+        Expanded(
+          child: SingleChildScrollView(
+            padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 10),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                // ==========================================
+                // --- TP FILE MANAGEMENT SECTION ---
+                // ==========================================
+                Row(
+                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                  children: [
+                    const Text("ACTIVE FILE", style: TextStyle(color: Colors.grey, fontSize: 10, fontWeight: FontWeight.bold, letterSpacing: 1)),
+                    Container(
+                      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+                      decoration: BoxDecoration(
+                        color: AppColors.lcdBg,
+                        borderRadius: BorderRadius.circular(4),
+                        border: Border.all(color: AppColors.border)
+                      ),
+                      child: Text(_currentTpName, style: const TextStyle(color: AppColors.accentBlue, fontSize: 12, fontWeight: FontWeight.bold, fontFamily: 'monospace')),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 15),
+                Row(
+                  children: [
+                    Expanded(
+                      child: _buildColorButton(
+                        "NEW",
+                        AppColors.accentBlue, 
+                        _showNewTpFileDialog,
+                        padding: 0,
+                        fontSize: 12,
+                        icon: Icons.add
+                      ),
+                    ),
+                    const SizedBox(width: 8),
+                    Expanded(
+                      child: _buildColorButton(
+                        "OPEN",
+                        AppColors.accentYellow, 
+                        () {
+                          _sendCommand('REFRESH_TP_FILES');
+                          Future.delayed(const Duration(milliseconds: 200), () => _showTpFileListSheet("Open"));
+                        },
+                        padding: 0,
+                        fontSize: 12,
+                        icon: Icons.folder_open
+                      ),
+                    ),
+                    const SizedBox(width: 8),
+                    Expanded(
+                      child: _buildColorButton(
+                        "DELETE",
+                        AppColors.accentRed, 
+                        () {
+                          _sendCommand('REFRESH_TP_FILES');
+                          Future.delayed(const Duration(milliseconds: 200), () => _showTpFileListSheet("Delete"));
+                        },
+                        padding: 0,
+                        fontSize: 12,
+                        icon: Icons.delete
+                      ),
+                    ),
+                  ],
+                ),
+
+                const SizedBox(height: 30),
+                const Divider(color: AppColors.border, thickness: 1),
+                const SizedBox(height: 20),
+
+                // ==========================================
+                // --- TP POINT CONTROLS ---
+                // ==========================================
+                const Text("TP POINT OPERATIONS", style: TextStyle(color: Colors.grey, fontSize: 10, fontWeight: FontWeight.bold, letterSpacing: 1)),
+                const SizedBox(height: 15),
+                
+                // ROW 1: Mode & Run
+                Row(
+                  children: [
+                    Expanded(
+                      child: _buildColorButton(
+                        _tpRunMode,
+                        AppColors.accentBlue, 
+                        _showTpModeDialog,
+                        padding: 0,
+                        icon: Icons.settings
+                      ),
+                    ),
+                    const SizedBox(width: 8),
+                    Expanded(
+                      child: _buildColorButton(
+                        "RUN TP",
+                        AppColors.accentGreen, 
+                        () => _showTpSelectionSheet("Run", _showRunConfirmDialog),
+                        padding: 0,
+                        icon: Icons.play_arrow
+                      ),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 8),
+                // ROW 2: Insert, Modify, Delete (Points)
+                Row(
+                  children: [
+                    Expanded(
+                      child: _buildColorButton(
+                        "INSERT",
+                        const Color(0xFF00E5FF), // Cyan
+                        _showInsertTpDialog,
+                        padding: 0,
+                        fontSize: 12,
+                        icon: Icons.add_circle_outline
+                      ),
+                    ),
+                    const SizedBox(width: 8),
+                    Expanded(
+                      child: _buildColorButton(
+                        "MODIFY",
+                        AppColors.accentBlue, 
+                        () => _showTpSelectionSheet("Modify", _showModifyTpDialog),
+                        padding: 0,
+                        fontSize: 12,
+                        icon: Icons.edit
+                      ),
+                    ),
+                    const SizedBox(width: 8),
+                    Expanded(
+                      child: _buildColorButton(
+                        "DELETE",
+                        const Color(0xFFFF3D00), // Red-Orange
+                        () => _showTpSelectionSheet("Delete", _showDeletePointConfirmDialog),
+                        padding: 0,
+                        fontSize: 12,
+                        icon: Icons.remove_circle_outline
+                      ),
+                    ),
+                  ],
+                ),
+              ],
+            ),
+          ),
+        ),
+      ],
     );
   }
 
@@ -1339,7 +1399,7 @@ class _ControllerScreenState extends State<ControllerScreen> {
     );
   }
 
-  Widget _buildColorButton(String text, Color color, VoidCallback onPressed, {bool isActive = false, double padding = 18, double fontSize = 14}) {
+  Widget _buildColorButton(String text, Color color, VoidCallback onPressed, {bool isActive = false, double padding = 18, double fontSize = 14, IconData? icon}) {
     return ElevatedButton(
       style: ElevatedButton.styleFrom(
         backgroundColor: isActive ? color : (text == "STOP" || text == "EXIT SYSTEM" || text == "DISCONNECT" ? AppColors.accentRed : AppColors.btnBg),
@@ -1350,7 +1410,16 @@ class _ControllerScreenState extends State<ControllerScreen> {
         elevation: isActive ? 10 : 2,
       ),
       onPressed: onPressed,
-      child: Text(text, style: TextStyle(fontWeight: FontWeight.bold, fontSize: fontSize), textAlign: TextAlign.center),
+      child: icon == null
+          ? Text(text, style: TextStyle(fontWeight: FontWeight.bold, fontSize: fontSize), textAlign: TextAlign.center)
+          : Row(
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: [
+                Icon(icon, size: fontSize + 4),
+                const SizedBox(width: 6),
+                Text(text, style: TextStyle(fontWeight: FontWeight.bold, fontSize: fontSize)),
+              ],
+            ),
     );
   }
 

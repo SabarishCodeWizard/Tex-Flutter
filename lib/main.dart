@@ -782,23 +782,7 @@ class _ControllerScreenState extends State<ControllerScreen> {
                 const SizedBox(height: 10),
                 _buildGenericButton("CLEAR MARKS", () => _sendCommand('CLEAR_MARKS')),
                 const SizedBox(height: 10),
-                _buildColorButton(
-                  "EXIT SYSTEM", 
-                  AppColors.accentRed, 
-                  () {
-                    // 1. Send command to the robot to shut down or disconnect safely
-                    _sendCommand('EXIT'); 
-                    
-                    // 2. Close the Flutter app
-                    if (Platform.isAndroid) {
-                      SystemNavigator.pop(); // Standard way to close on Android
-                    } else {
-                      exit(0); // Hard exit (use carefully)
-                    }
-                  }, 
-                  padding: 0,
-                  icon: Icons.exit_to_app, // Added an icon for clarity
-                ),
+                _buildColorButton("EXIT PRG", AppColors.accentRed, () => _sendCommand('EXIT'), padding: 0,icon: Icons.exit_to_app),
               ],
             ),
           ),

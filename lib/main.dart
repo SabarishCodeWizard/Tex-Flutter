@@ -1013,7 +1013,7 @@ class _ControllerScreenState extends State<ControllerScreen> {
     );
   }
 
-  // --- 2.5. SPEED & CONFIGURATION PORTRAIT VIEW ---
+// --- 2.5. SPEED & CONFIGURATION PORTRAIT VIEW ---
   Widget _buildSpeedView() {
     return Column(
       children: [
@@ -1025,22 +1025,26 @@ class _ControllerScreenState extends State<ControllerScreen> {
         ),
         Expanded(
           child: SingleChildScrollView(
-            padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 10),
+            // Increased top/bottom padding for the scroll area
+            padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 25), 
             child: Container(
-              padding: const EdgeInsets.all(16),
+              // Increased internal vertical padding of the card
+              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 24), 
               decoration: BoxDecoration(
                 color: AppColors.bgPanel,
                 borderRadius: BorderRadius.circular(10),
                 border: Border.all(color: AppColors.border),
-                boxShadow: const [BoxShadow(color: Colors.black12, blurRadius: 8, offset: Offset(0, 4))]
+                boxShadow: const [BoxShadow(color: Colors.black12, blurRadius: 12, offset: Offset(0, 6))]
               ),
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.stretch,
                 children: [
                   // Global Speed (%)
+                  const Text("GLOBAL SYSTEM SPEED", style: TextStyle(color: AppColors.accentBlue, fontSize: 11, fontWeight: FontWeight.bold, letterSpacing: 1)),
+                  const SizedBox(height: 10),
                   Row(
                     children: [
-                      const Expanded(flex: 2, child: Text("Global (%)", style: TextStyle(color: Colors.grey, fontSize: 13, fontWeight: FontWeight.bold))),
+                      const Expanded(flex: 2, child: Text("Limit (%)", style: TextStyle(color: Colors.grey, fontSize: 13, fontWeight: FontWeight.bold))),
                       Expanded(
                         flex: 4,
                         child: Slider(
@@ -1055,29 +1059,39 @@ class _ControllerScreenState extends State<ControllerScreen> {
                       ),
                     ],
                   ),
-                  const SizedBox(height: 10),
+                  const SizedBox(height: 20),
                   const Divider(color: AppColors.border, thickness: 1),
-                  const SizedBox(height: 10),
+                  const SizedBox(height: 20),
 
-                  // Individual vertical config rows
+                  // Linear Settings
                   _buildConfigDropdown("Lin Inc (mm)", _selectedMmInc, _mmOptions, (val) {
                     setState(() => _selectedMmInc = val);
                     if (val != "mm") _sendCommand('SET_MM_INC', val);
                   }),
-                  
+                  const SizedBox(height: 12), // Added extra gap
                   _buildConfigInput("Lin Speed (mm/s)", _mmSpeedCtrl, "SET_MM_SPEED"),
                   
+                  const SizedBox(height: 20),
+                  const Divider(color: AppColors.border, thickness: 1, indent: 20, endIndent: 20),
+                  const SizedBox(height: 20),
+
+                  // Angular Settings
                   _buildConfigDropdown("Ang Inc (deg)", _selectedDegInc, _degOptions, (val) {
                     setState(() => _selectedDegInc = val);
                     if (val != "deg") _sendCommand('SET_DEG_INC', val);
                   }),
-                  
+                  const SizedBox(height: 12), // Added extra gap
                   _buildConfigInput("Ang Speed (deg/s)", _degSpeedCtrl, "SET_DEG_SPEED"),
                   
+                  const SizedBox(height: 20),
+                  const Divider(color: AppColors.border, thickness: 1),
+                  const SizedBox(height: 20),
+
                   _buildConfigDropdown("Ref Frame", _frame, ["Base", "Tool", "User"], (val) {
                     setState(() => _frame = val);
                     _sendCommand('SET_FRAME', val);
                   }),
+                  const SizedBox(height: 20), // Padding at the very bottom
                 ],
               ),
             ),
@@ -1419,3 +1433,4 @@ class _ControllerScreenState extends State<ControllerScreen> {
     );
   }
 }
+

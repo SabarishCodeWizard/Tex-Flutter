@@ -89,6 +89,7 @@ class _ControllerScreenState extends State<ControllerScreen> {
 
   String _selectedMmInc = "mm";
   String _selectedDegInc = "deg";
+  String _opMode = "MANUAL";
   final List<String> _mmOptions = [
     "mm",
     "50",
@@ -181,6 +182,11 @@ class _ControllerScreenState extends State<ControllerScreen> {
   void _openTpManagement() {
     SystemChrome.setPreferredOrientations([DeviceOrientation.portraitUp]);
     setState(() => _currentView = "TP_MANAGEMENT");
+  }
+
+  void _openPrgManagement() {
+    SystemChrome.setPreferredOrientations([DeviceOrientation.portraitUp]);
+    setState(() => _currentView = "PRG_MANAGEMENT");
   }
 
   void _openCartesian() {
@@ -623,6 +629,9 @@ class _ControllerScreenState extends State<ControllerScreen> {
         return _buildSpeedView();
       case "TP_MANAGEMENT":
         return _buildTpManagementView();
+      // ADD THIS NEW CASE:
+      case "PRG_MANAGEMENT":
+        return _buildPrgManagementView();
       case "CARTESIAN":
         return _buildCartesianView();
       case "JOINTS":
@@ -992,7 +1001,12 @@ class _ControllerScreenState extends State<ControllerScreen> {
                       child: _buildColorButton(
                         "AUTO",
                         AppColors.accentBlue,
-                        () => _sendCommand('SET_AUTO'),
+                        () {
+                          setState(() => _opMode = "AUTO");
+                          _sendCommand('SET_AUTO');
+                        },
+                        isActive:
+                            _opMode == "AUTO", // Adds the visual highlight
                         padding: 0,
                         icon: Icons.autorenew,
                       ),
@@ -1002,7 +1016,12 @@ class _ControllerScreenState extends State<ControllerScreen> {
                       child: _buildColorButton(
                         "MANUAL",
                         AppColors.accentYellow,
-                        () => _sendCommand('SET_MANUAL'),
+                        () {
+                          setState(() => _opMode = "MANUAL");
+                          _sendCommand('SET_MANUAL');
+                        },
+                        isActive:
+                            _opMode == "MANUAL", // Adds the visual highlight
                         padding: 0,
                         icon: Icons.pan_tool,
                       ),
@@ -1148,44 +1167,49 @@ class _ControllerScreenState extends State<ControllerScreen> {
           ),
 
           const SizedBox(height: 25),
-          const Divider(color: AppColors.border, height: 40, thickness: 1),
+          const Divider(color: AppColors.border, thickness: 1),
+          const SizedBox(height: 15),
 
-          // 3. ROLE-BASED RENDERING
-          if (_activeRole == "Programmer") ...[
-            // --- PROGRAMMER VIEW ---
-            const Center(
-              child: Text(
-                "SELECT MOTION TYPE",
-                style: TextStyle(
-                  color: AppColors.accentBlue,
-                  letterSpacing: 1.5,
-                  fontWeight: FontWeight.bold,
-                ),
+          // --- SHARED MOTION TYPE SELECTION (NOW VISIBLE TO BOTH ROLES) ---
+          const Center(
+            child: Text(
+              "SELECT MOTION TYPE",
+              style: TextStyle(
+                color: AppColors.accentBlue,
+                letterSpacing: 1.5,
+                fontWeight: FontWeight.bold,
               ),
             ),
-            const SizedBox(height: 15),
-            Row(
-              children: [
-                Expanded(
-                  child: _buildColorButton(
-                    "JOG (Hold)",
-                    AppColors.accentGreen,
-                    () => setState(() => _motionType = "JOG"),
-                    isActive: _motionType == "JOG",
-                  ),
+          ),
+          const SizedBox(height: 15),
+          Row(
+            children: [
+              Expanded(
+                child: _buildColorButton(
+                  "JOG (Hold)",
+                  AppColors.accentGreen,
+                  () => setState(() => _motionType = "JOG"),
+                  isActive: _motionType == "JOG",
                 ),
-                const SizedBox(width: 10),
-                Expanded(
-                  child: _buildColorButton(
-                    "MOVE (Click)",
-                    AppColors.accentBlue,
-                    () => setState(() => _motionType = "MOVE"),
-                    isActive: _motionType == "MOVE",
-                  ),
+              ),
+              const SizedBox(width: 10),
+              Expanded(
+                child: _buildColorButton(
+                  "MOVE (Click)",
+                  AppColors.accentBlue,
+                  () => setState(() => _motionType = "MOVE"),
+                  isActive: _motionType == "MOVE",
                 ),
-              ],
-            ),
-            const SizedBox(height: 25),
+              ),
+            ],
+          ),
+          const SizedBox(height: 25),
+          const Divider(color: AppColors.border, thickness: 1),
+          const SizedBox(height: 20),
+
+          // 3. ROLE-BASED RENDERING (NAVIGATION CARDS IN CUSTOM ORDER)
+          if (_activeRole == "Programmer") ...[
+            // --- PROGRAMMER VIEW ---
             GestureDetector(
               onTap: _openSpeed,
               child: _buildNavCard(
@@ -1205,11 +1229,11 @@ class _ControllerScreenState extends State<ControllerScreen> {
             ),
             const SizedBox(height: 15),
             GestureDetector(
-              onTap: _openCartesian,
+              onTap: _openPrgManagement,
               child: _buildNavCard(
-                "CARTESIAN PAD",
-                Icons.screen_rotation,
-                "Opens in Landscape",
+                "PRG MANAGEMENT",
+                Icons.play_circle_fill,
+                "Manage, Calculate & Run Programs",
               ),
             ),
             const SizedBox(height: 15),
@@ -1221,11 +1245,20 @@ class _ControllerScreenState extends State<ControllerScreen> {
                 "Opens in Portrait",
               ),
             ),
+            const SizedBox(height: 15),
+            GestureDetector(
+              onTap: _openCartesian,
+              child: _buildNavCard(
+                "CARTESIAN PAD",
+                Icons.screen_rotation,
+                "Opens in Landscape",
+              ),
+            ),
           ] else ...[
             // --- OPERATOR VIEW ---
             const Center(
               child: Text(
-                "PROGRAM MANAGEMENT",
+                "OPERATOR DASHBOARD",
                 style: TextStyle(
                   color: AppColors.accentPurple,
                   letterSpacing: 1.5,
@@ -1235,166 +1268,49 @@ class _ControllerScreenState extends State<ControllerScreen> {
             ),
             const SizedBox(height: 15),
 
-            Container(
-              padding: const EdgeInsets.all(20),
-              decoration: BoxDecoration(
-                color: AppColors.bgPanel,
-                borderRadius: BorderRadius.circular(10),
-                border: Border.all(color: AppColors.border),
-                boxShadow: const [
-                  BoxShadow(
-                    color: Colors.black12,
-                    blurRadius: 8,
-                    offset: Offset(0, 4),
-                  ),
-                ],
+            // Operator Navigation Cards
+            GestureDetector(
+              onTap: _openSpeed,
+              child: _buildNavCard(
+                "SPEED SETTINGS",
+                Icons.speed,
+                "Configure Speeds & Increments",
               ),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.stretch,
-                children: [
-                  // Active File Display
-                  Row(
-                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                    children: [
-                      const Text(
-                        "ACTIVE FILE",
-                        style: TextStyle(
-                          color: Colors.grey,
-                          fontSize: 11,
-                          fontWeight: FontWeight.bold,
-                          letterSpacing: 1,
-                        ),
-                      ),
-                      Container(
-                        padding: const EdgeInsets.symmetric(
-                          horizontal: 10,
-                          vertical: 4,
-                        ),
-                        decoration: BoxDecoration(
-                          color: AppColors.lcdBg,
-                          borderRadius: BorderRadius.circular(4),
-                          border: Border.all(color: AppColors.border),
-                        ),
-                        child: Text(
-                          _currentPrName,
-                          style: const TextStyle(
-                            color: AppColors.accentPurple,
-                            fontSize: 14,
-                            fontWeight: FontWeight.bold,
-                            fontFamily: 'monospace',
-                          ),
-                        ),
-                      ),
-                    ],
-                  ),
-                  const SizedBox(height: 20),
-
-                  // Open Program File
-                  _buildColorButton(
-                    "OPEN PROGRAM FILE",
-                    AppColors.accentYellow,
-                    () {
-                      _sendCommand('REFRESH_PR_FILES');
-                      Future.delayed(
-                        const Duration(milliseconds: 200),
-                        () => _showPrFileListSheet(),
-                      );
-                    },
-                    icon: Icons.folder_open,
-                  ),
-                  const SizedBox(height: 15),
-
-                  // Calculate Trajectory
-                  _buildColorButton(
-                    _isCalculatingTrajectory
-                        ? "CALCULATING..."
-                        : "CALCULATE TRAJECTORY",
-                    _isCalculatingTrajectory
-                        ? AppColors.accentYellow
-                        : AppColors.accentBlue,
-                    () {
-                      if (!_isCalculatingTrajectory)
-                        _sendCommand('CALCULATE_TRAJECTORY');
-                    },
-                    isActive: _isCalculatingTrajectory,
-                    icon: _isCalculatingTrajectory
-                        ? Icons.hourglass_top
-                        : Icons.route,
-                  ),
-                  const SizedBox(height: 15),
-
-                  // Run Program
-                  _buildColorButton(
-                    "RUN PROGRAM",
-                    AppColors.accentGreen,
-                    () => _sendCommand('RUN_PROGRAM'),
-                    icon: Icons.play_arrow,
-                  ),
-
-                  const SizedBox(height: 20),
-                  const Divider(color: AppColors.border, thickness: 1),
-                  const SizedBox(height: 15),
-
-                  // Auto Highlight Display -> Now Opens Live Monitor Popup!
-                  const Text(
-                    "CURRENT INSTRUCTION",
-                    style: TextStyle(
-                      color: Colors.grey,
-                      fontSize: 11,
-                      fontWeight: FontWeight.bold,
-                      letterSpacing: 1,
-                    ),
-                  ),
-                  const SizedBox(height: 8),
-                  GestureDetector(
-                    onTap: () {
-                      showDialog(
-                        context: context,
-                        builder: (ctx) => LiveInstructionDialog(this),
-                      );
-                    },
-                    child: Container(
-                      padding: const EdgeInsets.all(12),
-                      decoration: BoxDecoration(
-                        color: AppColors.lcdBg,
-                        borderRadius: BorderRadius.circular(6),
-                        border: Border.all(color: AppColors.accentPurple),
-                      ),
-                      child: Row(
-                        children: [
-                          CircleAvatar(
-                            backgroundColor: AppColors.btnBg,
-                            radius: 14,
-                            child: Text(
-                              _highlightedInstruction >= 0
-                                  ? "$_highlightedInstruction"
-                                  : "-",
-                              style: const TextStyle(
-                                color: Colors.white,
-                                fontSize: 12,
-                                fontWeight: FontWeight.bold,
-                              ),
-                            ),
-                          ),
-                          const SizedBox(width: 15),
-                          Expanded(
-                            child: Text(
-                              _currentInstructionString.isNotEmpty
-                                  ? _currentInstructionString
-                                  : "Standing By...",
-                              style: const TextStyle(
-                                color: Colors.white,
-                                fontSize: 15,
-                                fontFamily: 'monospace',
-                                fontWeight: FontWeight.bold,
-                              ),
-                            ),
-                          ),
-                        ],
-                      ),
-                    ),
-                  ),
-                ],
+            ),
+            const SizedBox(height: 15),
+            GestureDetector(
+              onTap: _openTpManagement,
+              child: _buildNavCard(
+                "TP MANAGEMENT",
+                Icons.folder_special,
+                "Manage Files & Points",
+              ),
+            ),
+            const SizedBox(height: 15),
+            GestureDetector(
+              onTap: _openPrgManagement,
+              child: _buildNavCard(
+                "PRG MANAGEMENT",
+                Icons.play_circle_fill,
+                "Manage, Calculate & Run Programs",
+              ),
+            ),
+            const SizedBox(height: 15),
+            GestureDetector(
+              onTap: _openJoints,
+              child: _buildNavCard(
+                "JOINTS PAD",
+                Icons.precision_manufacturing,
+                "Opens in Portrait",
+              ),
+            ),
+            const SizedBox(height: 15),
+            GestureDetector(
+              onTap: _openCartesian,
+              child: _buildNavCard(
+                "CARTESIAN PAD",
+                Icons.screen_rotation,
+                "Opens in Landscape",
               ),
             ),
           ],
@@ -1929,6 +1845,200 @@ class _ControllerScreenState extends State<ControllerScreen> {
           ],
         ),
       ),
+    );
+  }
+
+  // =========================================================================
+  // NEW VIEW: PRG MANAGEMENT
+  // =========================================================================
+  Widget _buildPrgManagementView() {
+    return Column(
+      children: [
+        AppBar(
+          leading: IconButton(
+            icon: const Icon(Icons.arrow_back),
+            onPressed: _goBackToMain,
+          ),
+          title: const Text(
+            "PROGRAM MANAGEMENT",
+            style: TextStyle(
+              color: AppColors.accentPurple,
+              fontWeight: FontWeight.bold,
+              fontSize: 16,
+            ),
+          ),
+          backgroundColor: Colors.transparent,
+          elevation: 0,
+        ),
+        Expanded(
+          child: SingleChildScrollView(
+            padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 10),
+            child: Container(
+              padding: const EdgeInsets.all(20),
+              decoration: BoxDecoration(
+                color: AppColors.bgPanel,
+                borderRadius: BorderRadius.circular(10),
+                border: Border.all(color: AppColors.border),
+                boxShadow: const [
+                  BoxShadow(
+                    color: Colors.black12,
+                    blurRadius: 8,
+                    offset: Offset(0, 4),
+                  ),
+                ],
+              ),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: [
+                  // Active File Display
+                  Row(
+                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                    children: [
+                      const Text(
+                        "ACTIVE FILE",
+                        style: TextStyle(
+                          color: Colors.grey,
+                          fontSize: 11,
+                          fontWeight: FontWeight.bold,
+                          letterSpacing: 1,
+                        ),
+                      ),
+                      Container(
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 10,
+                          vertical: 4,
+                        ),
+                        decoration: BoxDecoration(
+                          color: AppColors.lcdBg,
+                          borderRadius: BorderRadius.circular(4),
+                          border: Border.all(color: AppColors.border),
+                        ),
+                        child: Text(
+                          _currentPrName,
+                          style: const TextStyle(
+                            color: AppColors.accentPurple,
+                            fontSize: 14,
+                            fontWeight: FontWeight.bold,
+                            fontFamily: 'monospace',
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 20),
+
+                  // Open Program File
+                  _buildColorButton(
+                    "OPEN PROGRAM FILE",
+                    AppColors.accentYellow,
+                    () {
+                      _sendCommand('REFRESH_PR_FILES');
+                      Future.delayed(
+                        const Duration(milliseconds: 200),
+                        () => _showPrFileListSheet(),
+                      );
+                    },
+                    icon: Icons.folder_open,
+                  ),
+                  const SizedBox(height: 15),
+
+                  // Calculate Trajectory
+                  _buildColorButton(
+                    _isCalculatingTrajectory
+                        ? "CALCULATING..."
+                        : "CALCULATE TRAJECTORY",
+                    _isCalculatingTrajectory
+                        ? AppColors.accentYellow
+                        : AppColors.accentBlue,
+                    () {
+                      if (!_isCalculatingTrajectory) {
+                        _sendCommand('CALCULATE_TRAJECTORY');
+                      }
+                    },
+                    isActive: _isCalculatingTrajectory,
+                    icon: _isCalculatingTrajectory
+                        ? Icons.hourglass_top
+                        : Icons.route,
+                  ),
+                  const SizedBox(height: 15),
+
+                  // Run Program
+                  _buildColorButton(
+                    "RUN PROGRAM",
+                    AppColors.accentGreen,
+                    () => _sendCommand('RUN_PROGRAM'),
+                    icon: Icons.play_arrow,
+                  ),
+
+                  const SizedBox(height: 20),
+                  const Divider(color: AppColors.border, thickness: 1),
+                  const SizedBox(height: 15),
+
+                  // Auto Highlight Display -> Now Opens Live Monitor Popup!
+                  const Text(
+                    "CURRENT INSTRUCTION",
+                    style: TextStyle(
+                      color: Colors.grey,
+                      fontSize: 11,
+                      fontWeight: FontWeight.bold,
+                      letterSpacing: 1,
+                    ),
+                  ),
+                  const SizedBox(height: 8),
+                  GestureDetector(
+                    onTap: () {
+                      showDialog(
+                        context: context,
+                        builder: (ctx) => LiveInstructionDialog(this),
+                      );
+                    },
+                    child: Container(
+                      padding: const EdgeInsets.all(12),
+                      decoration: BoxDecoration(
+                        color: AppColors.lcdBg,
+                        borderRadius: BorderRadius.circular(6),
+                        border: Border.all(color: AppColors.accentPurple),
+                      ),
+                      child: Row(
+                        children: [
+                          CircleAvatar(
+                            backgroundColor: AppColors.btnBg,
+                            radius: 14,
+                            child: Text(
+                              _highlightedInstruction >= 0
+                                  ? "$_highlightedInstruction"
+                                  : "-",
+                              style: const TextStyle(
+                                color: Colors.white,
+                                fontSize: 12,
+                                fontWeight: FontWeight.bold,
+                              ),
+                            ),
+                          ),
+                          const SizedBox(width: 15),
+                          Expanded(
+                            child: Text(
+                              _currentInstructionString.isNotEmpty
+                                  ? _currentInstructionString
+                                  : "Standing By...",
+                              style: const TextStyle(
+                                color: Colors.white,
+                                fontSize: 15,
+                                fontFamily: 'monospace',
+                                fontWeight: FontWeight.bold,
+                              ),
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ),
+        ),
+      ],
     );
   }
 

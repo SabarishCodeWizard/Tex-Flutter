@@ -1274,22 +1274,13 @@ class _ControllerScreenState extends State<ControllerScreen> {
             ),
             const SizedBox(height: 15),
 
-            // Operator Navigation Cards
+            // Operator Navigation Cards (NO TP MANAGEMENT)
             GestureDetector(
               onTap: _openSpeed,
               child: _buildNavCard(
                 "SPEED SETTINGS",
                 Icons.speed,
                 "Configure Speeds & Increments",
-              ),
-            ),
-            const SizedBox(height: 15),
-            GestureDetector(
-              onTap: _openTpManagement,
-              child: _buildNavCard(
-                "TP MANAGEMENT",
-                Icons.folder_special,
-                "Manage Files & Points",
               ),
             ),
             const SizedBox(height: 15),
@@ -1325,10 +1316,14 @@ class _ControllerScreenState extends State<ControllerScreen> {
     );
   }
 
-  // =========================================================================
-  // OPERATOR - PR FILE SELECTOR SHEET
-  // =========================================================================
-  void _showPrFileListSheet() {
+  void _showPrFileListSheet(String actionTitle) {
+    IconData actionIcon = actionTitle == "Open"
+        ? Icons.folder_open
+        : Icons.delete_forever;
+    Color actionColor = actionTitle == "Open"
+        ? AppColors.accentYellow
+        : AppColors.accentRed;
+
     showModalBottomSheet(
       context: context,
       backgroundColor: AppColors.bgPanel,
@@ -1350,12 +1345,12 @@ class _ControllerScreenState extends State<ControllerScreen> {
               ),
             ),
             const SizedBox(height: 15),
-            const Text(
-              "Open Program File",
+            Text(
+              "$actionTitle PRG File",
               style: TextStyle(
                 fontSize: 18,
                 fontWeight: FontWeight.bold,
-                color: AppColors.accentYellow,
+                color: actionColor,
               ),
             ),
             const Divider(color: AppColors.border, height: 30),
@@ -1397,14 +1392,18 @@ class _ControllerScreenState extends State<ControllerScreen> {
                               fontSize: 12,
                             ),
                           ),
-                          trailing: const Icon(
-                            Icons.folder_open,
-                            color: AppColors.accentYellow,
+                          trailing: Icon(
+                            actionIcon,
+                            color: actionColor,
                             size: 20,
                           ),
                           onTap: () {
                             Navigator.pop(ctx);
-                            _sendCommand('OPEN_PR_FILE', fileName);
+                            if (actionTitle == "Open") {
+                              _sendCommand('OPEN_PR_FILE', fileName);
+                            } else {
+                              _showDeletePrFileConfirmDialog(fileName);
+                            }
                           },
                         );
                       },
@@ -1855,7 +1854,7 @@ class _ControllerScreenState extends State<ControllerScreen> {
   }
 
   // =========================================================================
-  // NEW VIEW: PRG MANAGEMENT
+  // VIEW: PRG MANAGEMENT (UPDATED WITH ROLE RESTRICTIONS)
   // =========================================================================
   Widget _buildPrgManagementView() {
     return Column(
@@ -1896,7 +1895,7 @@ class _ControllerScreenState extends State<ControllerScreen> {
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.stretch,
                 children: [
-                  // Active File Display
+                  // --- Active File Display ---
                   Row(
                     mainAxisAlignment: MainAxisAlignment.spaceBetween,
                     children: [
@@ -1933,49 +1932,87 @@ class _ControllerScreenState extends State<ControllerScreen> {
                   ),
                   const SizedBox(height: 20),
 
-                  // Open Program File
-                  _buildColorButton(
-                    "OPEN PROGRAM FILE",
-                    AppColors.accentYellow,
-                    () {
-                      _sendCommand('REFRESH_PR_FILES');
-                      Future.delayed(
-                        const Duration(milliseconds: 200),
-                        () => _showPrFileListSheet(),
-                      );
-                    },
-                    icon: Icons.folder_open,
-                  ),
-                  const SizedBox(height: 15),
+                  // --- PRG FILE MANAGEMENT (ROLE RESTRICTED) ---
+                  Row(
+                    children: [
+                      // NEW Button (Programmer Only)
+                      if (_activeRole == "Programmer") ...[
+                        Expanded(
+                          child: _buildColorButton(
+                            "NEW",
+                            AppColors.accentBlue,
+                            _showNewPrFileDialog,
+                            padding: 0,
+                            fontSize: 12,
+                            icon: Icons.add,
+                          ),
+                        ),
+                        const SizedBox(width: 8),
+                      ],
 
-                  // --- Calculate Trajectory Button & Loading State ---
+                      // OPEN Button (Both Roles)
+                      Expanded(
+                        child: _buildColorButton(
+                          "OPEN",
+                          AppColors.accentYellow,
+                          () {
+                            _sendCommand('REFRESH_PR_FILES');
+                            Future.delayed(
+                              const Duration(milliseconds: 200),
+                              () => _showPrFileListSheet("Open"),
+                            );
+                          },
+                          padding: 0,
+                          fontSize: 12,
+                          icon: Icons.folder_open,
+                        ),
+                      ),
+
+                      // DELETE FILE Button (Programmer Only)
+                      if (_activeRole == "Programmer") ...[
+                        const SizedBox(width: 8),
+                        Expanded(
+                          child: _buildColorButton(
+                            "DELETE",
+                            AppColors.accentRed,
+                            () {
+                              _sendCommand('REFRESH_PR_FILES');
+                              Future.delayed(
+                                const Duration(milliseconds: 200),
+                                () => _showPrFileListSheet("Delete"),
+                              );
+                            },
+                            padding: 0,
+                            fontSize: 12,
+                            icon: Icons.delete,
+                          ),
+                        ),
+                      ],
+                    ],
+                  ),
+                  const SizedBox(height: 25),
+                  const Divider(color: AppColors.border, thickness: 1),
+                  const SizedBox(height: 20),
+
+                  // --- PRG EXECUTION (BOTH ROLES) ---
                   _buildColorButton(
                     _isCalculatingTrajectory
-                        ? "CANCEL CALCULATION" // Changes to Cancel when active
+                        ? "CANCEL CALCULATION"
                         : "CALCULATE TRAJECTORY",
                     _isCalculatingTrajectory
-                        ? AppColors
-                              .accentRed // Red to indicate a Stop/Cancel action
-                        : AppColors.accentBlue, // Default Blue
+                        ? AppColors.accentRed
+                        : AppColors.accentBlue,
                     () {
                       if (_isCalculatingTrajectory) {
-                        // If already calculating, send the cancel command from your C++ backend
                         _sendCommand('CANCEL_CALCULATION');
                       } else {
-                        // Otherwise, start the calculation
                         _sendCommand('CALCULATE_TRAJECTORY');
                       }
                     },
-                    isActive:
-                        _isCalculatingTrajectory, // Adds the glowing elevation effect
-                    icon: _isCalculatingTrajectory
-                        ? Icons
-                              .cancel // Cancel icon
-                        : Icons.route, // Path icon
+                    isActive: _isCalculatingTrajectory,
+                    icon: _isCalculatingTrajectory ? Icons.cancel : Icons.route,
                   ),
 
-                  // --- NEW: Professional Industrial Loading Bar ---
-                  // This only appears when the backend says isCalculatingTrajectory == true
                   if (_isCalculatingTrajectory) ...[
                     const SizedBox(height: 8),
                     Container(
@@ -2017,25 +2054,36 @@ class _ControllerScreenState extends State<ControllerScreen> {
                       ),
                     ),
                   ],
-
                   const SizedBox(height: 15),
 
-                  // Run Program
+                  // Run Program Button
                   _buildColorButton(
                     "RUN PROGRAM",
                     AppColors.accentGreen,
-                    () => _showPrgSelectionSheet(
-                      "Run",
-                      _showPrgRunConfirmDialog,
-                    ), // <-- Triggers the row selection sheet
+                    () =>
+                        _showPrgSelectionSheet("Run", _showPrgRunConfirmDialog),
                     icon: Icons.play_arrow,
                   ),
 
-                  const SizedBox(height: 20),
+                  // --- ROW DELETION (PROGRAMMER ONLY) ---
+                  if (_activeRole == "Programmer") ...[
+                    const SizedBox(height: 15),
+                    _buildColorButton(
+                      "DELETE INSTRUCTION",
+                      const Color(0xFFFF3D00), // Distinct Red-Orange
+                      () => _showPrgSelectionSheet(
+                        "Delete",
+                        _showDeletePrgRowConfirmDialog,
+                      ),
+                      icon: Icons.remove_circle_outline,
+                    ),
+                  ],
+
+                  const SizedBox(height: 25),
                   const Divider(color: AppColors.border, thickness: 1),
                   const SizedBox(height: 15),
 
-                  // Auto Highlight Display -> Now Opens Live Monitor Popup!
+                  // --- CURRENT INSTRUCTION LIVE MONITOR ---
                   const Text(
                     "CURRENT INSTRUCTION",
                     style: TextStyle(
@@ -2052,10 +2100,8 @@ class _ControllerScreenState extends State<ControllerScreen> {
                         context: context,
                         backgroundColor: Colors.transparent,
                         isScrollControlled: true,
-                        builder: (ctx) => LiveExecutionSheet(
-                          this,
-                          isPrgMode: true,
-                        ), // <-- ADD isPrgMode: true
+                        builder: (ctx) =>
+                            LiveExecutionSheet(this, isPrgMode: true),
                       );
                     },
                     child: Container(
@@ -3073,6 +3119,12 @@ class _ControllerScreenState extends State<ControllerScreen> {
     String actionTitle,
     Function(int index, Map<String, dynamic> prgItem) onSelect,
   ) {
+    // Dynamically set colors and icons based on whether we are Running or Deleting
+    IconData getIcon() =>
+        actionTitle == "Run" ? Icons.play_arrow : Icons.delete;
+    Color getColor() =>
+        actionTitle == "Run" ? AppColors.accentGreen : AppColors.accentRed;
+
     showModalBottomSheet(
       context: context,
       backgroundColor: AppColors.bgPanel,
@@ -3096,10 +3148,10 @@ class _ControllerScreenState extends State<ControllerScreen> {
             const SizedBox(height: 15),
             Text(
               "$actionTitle PRG Instruction",
-              style: const TextStyle(
+              style: TextStyle(
                 fontSize: 18,
                 fontWeight: FontWeight.bold,
-                color: AppColors.accentGreen,
+                color: getColor(), // <-- Uses dynamic color (Green or Red)
               ),
             ),
             const Divider(color: AppColors.border, height: 30),
@@ -3153,9 +3205,9 @@ class _ControllerScreenState extends State<ControllerScreen> {
                             maxLines: 1,
                             overflow: TextOverflow.ellipsis,
                           ),
-                          trailing: const Icon(
-                            Icons.play_arrow,
-                            color: AppColors.accentGreen,
+                          trailing: Icon(
+                            getIcon(), // <-- Uses dynamic icon (Play Arrow or Trash Bin)
+                            color: getColor(),
                             size: 20,
                           ),
                           onTap: () {
@@ -3541,6 +3593,182 @@ class _ControllerScreenState extends State<ControllerScreen> {
             },
             child: const Text(
               "CONFIRM",
+              style: TextStyle(
+                color: Colors.white,
+                fontWeight: FontWeight.bold,
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  // =========================================================================
+  // PRG: FILE CREATION AND DELETION DIALOGS
+  // =========================================================================
+  void _showNewPrFileDialog() {
+    final nameCtrl = TextEditingController();
+    showDialog(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        backgroundColor: AppColors.bgPanel,
+        shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(12),
+          side: const BorderSide(color: AppColors.accentBlue, width: 1),
+        ),
+        title: const Text(
+          "Create PRG File",
+          style: TextStyle(
+            color: AppColors.accentBlue,
+            fontWeight: FontWeight.bold,
+          ),
+        ),
+        content: TextField(
+          controller: nameCtrl,
+          style: const TextStyle(color: Colors.white),
+          decoration: const InputDecoration(
+            labelText: "Program Name (e.g., weld_path_1)",
+            labelStyle: TextStyle(color: Colors.grey),
+            border: OutlineInputBorder(),
+            filled: true,
+            fillColor: AppColors.bgMain,
+          ),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx),
+            child: const Text("CANCEL", style: TextStyle(color: Colors.grey)),
+          ),
+          ElevatedButton(
+            style: ElevatedButton.styleFrom(
+              backgroundColor: AppColors.accentBlue,
+            ),
+            onPressed: () {
+              if (nameCtrl.text.isNotEmpty) {
+                _sendCommand(
+                  'NEW_PR_FILE',
+                  nameCtrl.text,
+                ); // <--- Triggers C++ requestNewPr
+                Navigator.pop(ctx);
+              }
+            },
+            child: const Text(
+              "CREATE",
+              style: TextStyle(
+                color: Colors.black,
+                fontWeight: FontWeight.bold,
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  void _showDeletePrFileConfirmDialog(String fileName) {
+    showDialog(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        backgroundColor: AppColors.bgPanel,
+        shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(12),
+          side: const BorderSide(color: AppColors.accentRed, width: 1),
+        ),
+        title: const Row(
+          children: [
+            Icon(Icons.warning_amber_rounded, color: AppColors.accentRed),
+            SizedBox(width: 10),
+            Text(
+              "Delete PRG File?",
+              style: TextStyle(
+                color: AppColors.accentRed,
+                fontWeight: FontWeight.bold,
+                fontSize: 16,
+              ),
+            ),
+          ],
+        ),
+        content: Text(
+          "Are you sure you want to permanently delete the program '$fileName'?",
+          style: const TextStyle(color: Colors.white),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx),
+            child: const Text("CANCEL", style: TextStyle(color: Colors.grey)),
+          ),
+          ElevatedButton(
+            style: ElevatedButton.styleFrom(
+              backgroundColor: AppColors.accentRed,
+            ),
+            onPressed: () {
+              _sendCommand(
+                'DELETE_PR_FILE',
+                fileName,
+              ); // <--- Triggers C++ requestDeletePrFile
+              Navigator.pop(ctx);
+            },
+            child: const Text(
+              "DELETE",
+              style: TextStyle(
+                color: Colors.white,
+                fontWeight: FontWeight.bold,
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  void _showDeletePrgRowConfirmDialog(int index, Map<String, dynamic> prgItem) {
+    String name = prgItem['name'] ?? prgItem['inst'] ?? "CMD";
+    String val = prgItem['value'] ?? prgItem['data'] ?? "";
+
+    showDialog(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        backgroundColor: AppColors.bgPanel,
+        shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(12),
+          side: const BorderSide(color: AppColors.accentRed, width: 1.5),
+        ),
+        title: const Text(
+          "Delete Instruction",
+          style: TextStyle(
+            color: AppColors.accentRed,
+            fontWeight: FontWeight.bold,
+          ),
+        ),
+        content: Text(
+          "Step ${index + 1}: $name\nData: $val\n\nDelete this instruction?",
+          style: const TextStyle(color: Colors.white),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx),
+            child: const Text("CANCEL", style: TextStyle(color: Colors.grey)),
+          ),
+          ElevatedButton(
+            style: ElevatedButton.styleFrom(
+              backgroundColor: AppColors.accentRed,
+            ),
+            onPressed: () {
+              // 1. Select row, 2. Delete it (Matches C++ backend signals)
+              _sendCommand('SELECT_PR_ROW', index);
+              _sendCommand('DELETE_PR_INSTRUCTION');
+
+              // Optimistically update the UI to prevent ghost rows
+              setState(() {
+                if (index >= 0 && index < _prProgramData.length) {
+                  _prProgramData.removeAt(index);
+                }
+              });
+              Navigator.pop(ctx);
+            },
+            child: const Text(
+              "DELETE",
               style: TextStyle(
                 color: Colors.white,
                 fontWeight: FontWeight.bold,

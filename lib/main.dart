@@ -1769,7 +1769,7 @@ class _ControllerScreenState extends State<ControllerScreen> {
   }
 
  // =========================================================================
-  // CARTESIAN VIEW (SINGLE DYNAMIC D-PAD)
+  // CARTESIAN VIEW (RESPONSIVE DYNAMIC D-PAD & VERTICAL TOGGLE)
   // =========================================================================
   Widget _buildCartesianView() {
     return Container(
@@ -1779,95 +1779,114 @@ class _ControllerScreenState extends State<ControllerScreen> {
           children: [
             _buildTopHud(),
             
-            // --- CARTESIAN / ROTATION TOGGLE HEADER ---
-            Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 15),
-              child: Row(
-                mainAxisAlignment: MainAxisAlignment.spaceBetween,
+            Expanded(
+              child: Stack(
                 children: [
-                  IconButton(
-                    icon: const Icon(Icons.arrow_back, color: Colors.white, size: 28),
-                    onPressed: _goBackToMain,
-                  ),
-                  // Segmented Toggle
-                  Container(
-                    decoration: BoxDecoration(
-                      color: AppColors.bgPanel,
-                      borderRadius: BorderRadius.circular(20),
-                      border: Border.all(color: AppColors.border),
-                    ),
-                    child: Row(
-                      mainAxisSize: MainAxisSize.min,
+                  // --- LEFT: BACK BUTTON & MODE BADGE ---
+                  Positioned(
+                    top: 15,
+                    left: 15,
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
-                        GestureDetector(
-                          onTap: () => setState(() => _isRotationMode = false),
-                          child: Container(
-                            padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 8),
-                            decoration: BoxDecoration(
-                              color: !_isRotationMode ? AppColors.accentBlue : Colors.transparent,
-                              borderRadius: BorderRadius.circular(20),
-                            ),
-                            child: Text(
-                              "CARTESIAN",
-                              style: TextStyle(
-                                color: !_isRotationMode ? Colors.black : Colors.white,
-                                fontWeight: FontWeight.bold,
-                                fontSize: 13,
-                                letterSpacing: 1,
-                              ),
+                        IconButton(
+                          icon: const Icon(Icons.arrow_back, color: Colors.white, size: 28),
+                          onPressed: _goBackToMain,
+                        ),
+                        const SizedBox(height: 15),
+                        Container(
+                          padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+                          decoration: BoxDecoration(
+                            color: Colors.black45,
+                            borderRadius: BorderRadius.circular(6),
+                            border: Border.all(
+                              color: _motionType == "JOG" ? AppColors.accentGreen : AppColors.accentBlue,
+                              width: 1.5,
                             ),
                           ),
-                        ),
-                        GestureDetector(
-                          onTap: () => setState(() => _isRotationMode = true),
-                          child: Container(
-                            padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 8),
-                            decoration: BoxDecoration(
-                              color: _isRotationMode ? AppColors.accentBlue : Colors.transparent,
-                              borderRadius: BorderRadius.circular(20),
-                            ),
-                            child: Text(
-                              "ROTATION",
-                              style: TextStyle(
-                                color: _isRotationMode ? Colors.black : Colors.white,
-                                fontWeight: FontWeight.bold,
-                                fontSize: 13,
-                                letterSpacing: 1,
-                              ),
+                          child: Text(
+                            "$_motionType MODE",
+                            style: TextStyle(
+                              color: _motionType == "JOG" ? AppColors.accentGreen : AppColors.accentBlue,
+                              fontWeight: FontWeight.bold,
+                              fontSize: 12,
                             ),
                           ),
                         ),
                       ],
                     ),
                   ),
-                  // Motion Mode Badge
-                  Container(
-                    padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
-                    decoration: BoxDecoration(
-                      color: Colors.black45,
-                      borderRadius: BorderRadius.circular(6),
-                      border: Border.all(
-                        color: _motionType == "JOG" ? AppColors.accentGreen : AppColors.accentBlue,
-                        width: 1.5,
-                      ),
-                    ),
-                    child: Text(
-                      "$_motionType MODE",
-                      style: TextStyle(
-                        color: _motionType == "JOG" ? AppColors.accentGreen : AppColors.accentBlue,
-                        fontWeight: FontWeight.bold,
-                        fontSize: 12,
+
+                  // --- CENTER: RESPONSIVE DYNAMIC D-PAD ---
+                  Center(
+                    child: _buildSingleDPad(),
+                  ),
+
+                  // --- RIGHT: VERTICAL CARTESIAN / ROTATION TOGGLE ---
+                  Positioned(
+                    right: 15,
+                    top: 0,
+                    bottom: 0,
+                    child: Center(
+                      child: Container(
+                        decoration: BoxDecoration(
+                          color: AppColors.bgPanel,
+                          borderRadius: BorderRadius.circular(20),
+                          border: Border.all(color: AppColors.border),
+                        ),
+                        child: Column(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            GestureDetector(
+                              onTap: () => setState(() => _isRotationMode = false),
+                              child: Container(
+                                padding: const EdgeInsets.symmetric(vertical: 20, horizontal: 8),
+                                decoration: BoxDecoration(
+                                  color: !_isRotationMode ? AppColors.accentBlue : Colors.transparent,
+                                  borderRadius: BorderRadius.circular(20),
+                                ),
+                                child: RotatedBox(
+                                  quarterTurns: 3, // Reads bottom to top
+                                  child: Text(
+                                    "CARTESIAN",
+                                    style: TextStyle(
+                                      color: !_isRotationMode ? Colors.black : Colors.white,
+                                      fontWeight: FontWeight.bold,
+                                      fontSize: 13,
+                                      letterSpacing: 1,
+                                    ),
+                                  ),
+                                ),
+                              ),
+                            ),
+                            GestureDetector(
+                              onTap: () => setState(() => _isRotationMode = true),
+                              child: Container(
+                                padding: const EdgeInsets.symmetric(vertical: 20, horizontal: 8),
+                                decoration: BoxDecoration(
+                                  color: _isRotationMode ? AppColors.accentBlue : Colors.transparent,
+                                  borderRadius: BorderRadius.circular(20),
+                                ),
+                                child: RotatedBox(
+                                  quarterTurns: 3,
+                                  child: Text(
+                                    "ROTATION",
+                                    style: TextStyle(
+                                      color: _isRotationMode ? Colors.black : Colors.white,
+                                      fontWeight: FontWeight.bold,
+                                      fontSize: 13,
+                                      letterSpacing: 1,
+                                    ),
+                                  ),
+                                ),
+                              ),
+                            ),
+                          ],
+                        ),
                       ),
                     ),
                   ),
                 ],
-              ),
-            ),
-
-            // --- SINGLE DYNAMIC D-PAD ---
-            Expanded(
-              child: Center(
-                child: _buildSingleDPad(),
               ),
             ),
           ],
@@ -2230,6 +2249,9 @@ class _ControllerScreenState extends State<ControllerScreen> {
     );
   }
 
+  // =========================================================================
+  // JOINTS VIEW (DYNAMIC ALIGNMENT WITH LISTVIEW)
+  // =========================================================================
   Widget _buildJointsView() {
     return Column(
       children: [
@@ -2241,36 +2263,32 @@ class _ControllerScreenState extends State<ControllerScreen> {
           title: Text(
             "JOINTS - $_motionType",
             style: TextStyle(
-              color: _motionType == "JOG"
-                  ? AppColors.accentGreen
-                  : AppColors.accentBlue,
+              color: _motionType == "JOG" ? AppColors.accentGreen : AppColors.accentBlue,
+              fontWeight: FontWeight.bold,
             ),
           ),
           backgroundColor: Colors.transparent,
           elevation: 0,
         ),
+        // Used ListView.builder to ensure it handles smaller screen heights without overflow
         Expanded(
-          child: SingleChildScrollView(
+          child: ListView.builder(
             padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 10),
-            child: Column(
-              children: [
-                for (int i = 1; i <= 6; i++) _buildJointRow(i),
-                const SizedBox(height: 30),
-              ],
-            ),
+            itemCount: 6,
+            itemBuilder: (context, index) => _buildJointRow(index + 1),
           ),
         ),
       ],
     );
   }
 
-  // --- UPDATED JOINT ROW (For proper sizing) ---
+  // --- UPDATED JOINT ROW (Flexible constraints for all screen widths) ---
   Widget _buildJointRow(int jointNum) {
     double val = _joints['j$jointNum'] ?? 0.0;
     return Padding(
       padding: const EdgeInsets.only(bottom: 15),
       child: Container(
-        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 12),
+        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 12),
         decoration: BoxDecoration(
           color: AppColors.bgPanel,
           borderRadius: BorderRadius.circular(12),
@@ -2282,42 +2300,54 @@ class _ControllerScreenState extends State<ControllerScreen> {
         child: Row(
           mainAxisAlignment: MainAxisAlignment.spaceBetween,
           children: [
-            // Uses the new 3D Tactile Button Factory
-            _buildJogButton("J$jointNum-", width: 75, height: 60), 
+            // Flexible allows the button to expand/contract safely
+            Flexible(
+              flex: 2,
+              child: _buildJogButton("J$jointNum-", width: double.infinity, height: 60), 
+            ),
             Expanded(
-              child: Column(
-                children: [
-                  Text(
-                    "JOINT $jointNum",
-                    style: const TextStyle(
-                      color: Colors.grey,
-                      fontSize: 11,
-                      fontWeight: FontWeight.bold,
-                      letterSpacing: 1,
-                    ),
-                  ),
-                  const SizedBox(height: 6),
-                  Container(
-                    padding: const EdgeInsets.symmetric(horizontal: 15, vertical: 6),
-                    decoration: BoxDecoration(
-                      color: AppColors.lcdBg,
-                      borderRadius: BorderRadius.circular(6),
-                      border: Border.all(color: AppColors.border),
-                    ),
-                    child: Text(
-                      "${val.toStringAsFixed(2)}°",
+              flex: 3,
+              child: Padding(
+                padding: const EdgeInsets.symmetric(horizontal: 10),
+                child: Column(
+                  children: [
+                    Text(
+                      "JOINT $jointNum",
                       style: const TextStyle(
-                        fontFamily: 'monospace',
-                        color: AppColors.accentBlue,
+                        color: Colors.grey,
+                        fontSize: 11,
                         fontWeight: FontWeight.bold,
-                        fontSize: 18,
+                        letterSpacing: 1,
                       ),
                     ),
-                  ),
-                ],
+                    const SizedBox(height: 6),
+                    Container(
+                      width: double.infinity,
+                      alignment: Alignment.center,
+                      padding: const EdgeInsets.symmetric(vertical: 6),
+                      decoration: BoxDecoration(
+                        color: AppColors.lcdBg,
+                        borderRadius: BorderRadius.circular(6),
+                        border: Border.all(color: AppColors.border),
+                      ),
+                      child: Text(
+                        "${val.toStringAsFixed(2)}°",
+                        style: const TextStyle(
+                          fontFamily: 'monospace',
+                          color: AppColors.accentBlue,
+                          fontWeight: FontWeight.bold,
+                          fontSize: 16, // Scaled down slightly to fit smaller phones perfectly
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
               ),
             ),
-            _buildJogButton("J$jointNum+", width: 75, height: 60),
+            Flexible(
+              flex: 2,
+              child: _buildJogButton("J$jointNum+", width: double.infinity, height: 60),
+            ),
           ],
         ),
       ),
@@ -2550,7 +2580,6 @@ class _ControllerScreenState extends State<ControllerScreen> {
 
   // --- REPLACES _buildDPadCluster ---
   Widget _buildSingleDPad() {
-    // Dynamically assign labels based on the toggle state
     String up = _isRotationMode ? "Ry+" : "Y+";
     String down = _isRotationMode ? "Ry-" : "Y-";
     String left = _isRotationMode ? "Rx-" : "X-";
@@ -2558,7 +2587,10 @@ class _ControllerScreenState extends State<ControllerScreen> {
     String zUp = _isRotationMode ? "Rz+" : "Z+";
     String zDown = _isRotationMode ? "Rz-" : "Z-";
 
-    double btnSize = 80; // Large tactile buttons
+    // Dynamic Sizing based on screen height to prevent overlap on any phone
+    double screenHeight = MediaQuery.of(context).size.height;
+    double btnSize = (screenHeight * 0.20).clamp(55.0, 85.0); // Adjusts beautifully to space
+    double spacing = 12.0; // Increased spacing for cleaner industrial look
 
     return Row(
       mainAxisAlignment: MainAxisAlignment.center,
@@ -2569,24 +2601,28 @@ class _ControllerScreenState extends State<ControllerScreen> {
           mainAxisSize: MainAxisSize.min,
           children: [
             _buildJogButton(up, width: btnSize, height: btnSize),
+            SizedBox(height: spacing),
             Row(
               mainAxisSize: MainAxisSize.min,
               children: [
                 _buildJogButton(left, width: btnSize, height: btnSize),
+                SizedBox(width: spacing),
                 _buildJogButton("HOME", width: btnSize, height: btnSize, isCircle: true),
+                SizedBox(width: spacing),
                 _buildJogButton(right, width: btnSize, height: btnSize),
               ],
             ),
+            SizedBox(height: spacing),
             _buildJogButton(down, width: btnSize, height: btnSize),
           ],
         ),
-        const SizedBox(width: 50), // Spacing between XY and Z
+        SizedBox(width: btnSize * 0.8), // Dynamic spacing between XY and Z
         // Vertical layout for Z
         Column(
           mainAxisSize: MainAxisSize.min,
           children: [
             _buildJogButton(zUp, width: btnSize, height: btnSize),
-            const SizedBox(height: 20),
+            SizedBox(height: spacing * 2.5), // Distinctly separates Up/Down
             _buildJogButton(zDown, width: btnSize, height: btnSize),
           ],
         ),

@@ -285,12 +285,17 @@ class _ControllerScreenState extends State<ControllerScreen> {
       if (type == 'auth_rejected' ||
           type == 'connection_rejected' ||
           type == 'force_disconnect') {
-        _isKickedOrRejected =
-            true; // Tell Flutter NOT to overwrite this message
+        _isKickedOrRejected = true; // Tell Flutter NOT to overwrite this message
         String msg = data['message'] ?? "Connection denied.";
 
-        // Translate the C++ backend messages into the requested professional format
-        if (msg.contains("Server is busy")) {
+        // --- NEW: Advanced User-in-Use parsing ---
+        if (type == 'connection_rejected' && data.containsKey('active_user')) {
+          String actUser = data['active_user'];
+          String actRole = data['active_role'];
+          msg = "Access Denied: The server is currently in use by another client ($actRole: $actUser).";
+        }
+        // Translate the generic C++ backend messages into the requested professional format
+        else if (msg.contains("Server is busy")) {
           msg = "Another client is already connected to the server.";
         } else if (msg.contains("Access Denied")) {
           msg = msg.replaceAll(
@@ -304,8 +309,7 @@ class _ControllerScreenState extends State<ControllerScreen> {
         } else if (msg.contains("Admin login is strictly prohibited")) {
           msg = "Access restricted: Remote Admin operations are prohibited.";
         } else if (type == 'force_disconnect') {
-          msg =
-              "Session Terminated: You have been disconnected by the server admin.";
+          msg = "Session Terminated: You have been disconnected by the server admin.";
         }
 
         _handleDisconnect(msg);

@@ -128,6 +128,7 @@ class _ControllerScreenState extends State<ControllerScreen> {
   String _frame = "Base";
   String _motionType = "JOG";
   String _tpRunMode = "TP Mode";
+  bool _isRotationMode = false;
 
   // File Tracking State
   String _currentTpName = "None";
@@ -1767,6 +1768,9 @@ class _ControllerScreenState extends State<ControllerScreen> {
     );
   }
 
+ // =========================================================================
+  // CARTESIAN VIEW (SINGLE DYNAMIC D-PAD)
+  // =========================================================================
   Widget _buildCartesianView() {
     return Container(
       color: AppColors.bgMain,
@@ -1774,77 +1778,96 @@ class _ControllerScreenState extends State<ControllerScreen> {
         child: Column(
           children: [
             _buildTopHud(),
-            Expanded(
-              child: Stack(
+            
+            // --- CARTESIAN / ROTATION TOGGLE HEADER ---
+            Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 15),
+              child: Row(
+                mainAxisAlignment: MainAxisAlignment.spaceBetween,
                 children: [
-                  Positioned(
-                    top: 10,
-                    left: 10,
-                    child: IconButton(
-                      icon: const Icon(
-                        Icons.arrow_back,
-                        color: Colors.white,
-                        size: 24,
-                      ),
-                      onPressed: _goBackToMain,
-                    ),
+                  IconButton(
+                    icon: const Icon(Icons.arrow_back, color: Colors.white, size: 28),
+                    onPressed: _goBackToMain,
                   ),
-                  Positioned(
-                    top: 15,
-                    right: 20,
-                    child: Container(
-                      padding: const EdgeInsets.symmetric(
-                        horizontal: 8,
-                        vertical: 4,
-                      ),
-                      decoration: BoxDecoration(
-                        color: Colors.black45,
-                        borderRadius: BorderRadius.circular(4),
-                        border: Border.all(
-                          color: _motionType == "JOG"
-                              ? AppColors.accentGreen
-                              : AppColors.accentBlue,
-                        ),
-                      ),
-                      child: Text(
-                        "$_motionType MODE",
-                        style: TextStyle(
-                          color: _motionType == "JOG"
-                              ? AppColors.accentGreen
-                              : AppColors.accentBlue,
-                          fontWeight: FontWeight.bold,
-                          fontSize: 12,
-                        ),
-                      ),
+                  // Segmented Toggle
+                  Container(
+                    decoration: BoxDecoration(
+                      color: AppColors.bgPanel,
+                      borderRadius: BorderRadius.circular(20),
+                      border: Border.all(color: AppColors.border),
                     ),
-                  ),
-                  Center(
                     child: Row(
-                      mainAxisAlignment: MainAxisAlignment.spaceEvenly,
-                      crossAxisAlignment: CrossAxisAlignment.center,
+                      mainAxisSize: MainAxisSize.min,
                       children: [
-                        _buildDPadCluster(
-                          "Y+",
-                          "Y-",
-                          "X-",
-                          "X+",
-                          "Z+",
-                          "Z-",
-                          "XYZ MOVE",
+                        GestureDetector(
+                          onTap: () => setState(() => _isRotationMode = false),
+                          child: Container(
+                            padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 8),
+                            decoration: BoxDecoration(
+                              color: !_isRotationMode ? AppColors.accentBlue : Colors.transparent,
+                              borderRadius: BorderRadius.circular(20),
+                            ),
+                            child: Text(
+                              "CARTESIAN",
+                              style: TextStyle(
+                                color: !_isRotationMode ? Colors.black : Colors.white,
+                                fontWeight: FontWeight.bold,
+                                fontSize: 13,
+                                letterSpacing: 1,
+                              ),
+                            ),
+                          ),
                         ),
-                        _buildDPadCluster(
-                          "Rx+",
-                          "Rx-",
-                          "Ry+",
-                          "Ry-",
-                          "Rz+",
-                          "Rz-",
-                          "ROTATION",
+                        GestureDetector(
+                          onTap: () => setState(() => _isRotationMode = true),
+                          child: Container(
+                            padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 8),
+                            decoration: BoxDecoration(
+                              color: _isRotationMode ? AppColors.accentBlue : Colors.transparent,
+                              borderRadius: BorderRadius.circular(20),
+                            ),
+                            child: Text(
+                              "ROTATION",
+                              style: TextStyle(
+                                color: _isRotationMode ? Colors.black : Colors.white,
+                                fontWeight: FontWeight.bold,
+                                fontSize: 13,
+                                letterSpacing: 1,
+                              ),
+                            ),
+                          ),
                         ),
                       ],
                     ),
                   ),
+                  // Motion Mode Badge
+                  Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+                    decoration: BoxDecoration(
+                      color: Colors.black45,
+                      borderRadius: BorderRadius.circular(6),
+                      border: Border.all(
+                        color: _motionType == "JOG" ? AppColors.accentGreen : AppColors.accentBlue,
+                        width: 1.5,
+                      ),
+                    ),
+                    child: Text(
+                      "$_motionType MODE",
+                      style: TextStyle(
+                        color: _motionType == "JOG" ? AppColors.accentGreen : AppColors.accentBlue,
+                        fontWeight: FontWeight.bold,
+                        fontSize: 12,
+                      ),
+                    ),
+                  ),
                 ],
+              ),
+            ),
+
+            // --- SINGLE DYNAMIC D-PAD ---
+            Expanded(
+              child: Center(
+                child: _buildSingleDPad(),
               ),
             ),
           ],
@@ -2241,28 +2264,26 @@ class _ControllerScreenState extends State<ControllerScreen> {
     );
   }
 
+  // --- UPDATED JOINT ROW (For proper sizing) ---
   Widget _buildJointRow(int jointNum) {
     double val = _joints['j$jointNum'] ?? 0.0;
     return Padding(
       padding: const EdgeInsets.only(bottom: 15),
       child: Container(
-        padding: const EdgeInsets.all(8),
+        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 12),
         decoration: BoxDecoration(
           color: AppColors.bgPanel,
-          borderRadius: BorderRadius.circular(8),
+          borderRadius: BorderRadius.circular(12),
           border: Border.all(color: AppColors.border),
           boxShadow: const [
-            BoxShadow(
-              color: Colors.black12,
-              blurRadius: 4,
-              offset: Offset(0, 2),
-            ),
+            BoxShadow(color: Colors.black12, blurRadius: 4, offset: Offset(0, 2)),
           ],
         ),
         child: Row(
           mainAxisAlignment: MainAxisAlignment.spaceBetween,
           children: [
-            _buildJogButton("J$jointNum-", width: 60, height: 50),
+            // Uses the new 3D Tactile Button Factory
+            _buildJogButton("J$jointNum-", width: 75, height: 60), 
             Expanded(
               child: Column(
                 children: [
@@ -2270,19 +2291,17 @@ class _ControllerScreenState extends State<ControllerScreen> {
                     "JOINT $jointNum",
                     style: const TextStyle(
                       color: Colors.grey,
-                      fontSize: 10,
+                      fontSize: 11,
                       fontWeight: FontWeight.bold,
+                      letterSpacing: 1,
                     ),
                   ),
-                  const SizedBox(height: 4),
+                  const SizedBox(height: 6),
                   Container(
-                    padding: const EdgeInsets.symmetric(
-                      horizontal: 10,
-                      vertical: 4,
-                    ),
+                    padding: const EdgeInsets.symmetric(horizontal: 15, vertical: 6),
                     decoration: BoxDecoration(
                       color: AppColors.lcdBg,
-                      borderRadius: BorderRadius.circular(4),
+                      borderRadius: BorderRadius.circular(6),
                       border: Border.all(color: AppColors.border),
                     ),
                     child: Text(
@@ -2298,7 +2317,7 @@ class _ControllerScreenState extends State<ControllerScreen> {
                 ],
               ),
             ),
-            _buildJogButton("J$jointNum+", width: 60, height: 50),
+            _buildJogButton("J$jointNum+", width: 75, height: 60),
           ],
         ),
       ),
@@ -2529,108 +2548,88 @@ class _ControllerScreenState extends State<ControllerScreen> {
     );
   }
 
-  Widget _buildDPadCluster(
-    String up,
-    String down,
-    String left,
-    String right,
-    String zUp,
-    String zDown,
-    String title,
-  ) {
-    double btnSize = 55;
-    return Column(
-      mainAxisSize: MainAxisSize.min,
+  // --- REPLACES _buildDPadCluster ---
+  Widget _buildSingleDPad() {
+    // Dynamically assign labels based on the toggle state
+    String up = _isRotationMode ? "Ry+" : "Y+";
+    String down = _isRotationMode ? "Ry-" : "Y-";
+    String left = _isRotationMode ? "Rx-" : "X-";
+    String right = _isRotationMode ? "Rx+" : "X+";
+    String zUp = _isRotationMode ? "Rz+" : "Z+";
+    String zDown = _isRotationMode ? "Rz-" : "Z-";
+
+    double btnSize = 80; // Large tactile buttons
+
+    return Row(
+      mainAxisAlignment: MainAxisAlignment.center,
+      crossAxisAlignment: CrossAxisAlignment.center,
       children: [
-        Text(
-          title,
-          style: const TextStyle(
-            color: Colors.white24,
-            fontWeight: FontWeight.bold,
-            fontSize: 10,
-            letterSpacing: 1.5,
-          ),
-        ),
-        const SizedBox(height: 8),
-        Row(
+        // Cross layout for X and Y with HOME in center
+        Column(
           mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.center,
           children: [
-            Column(
+            _buildJogButton(up, width: btnSize, height: btnSize),
+            Row(
               mainAxisSize: MainAxisSize.min,
               children: [
-                _buildJogButton(up, width: btnSize, height: btnSize),
-                Row(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    _buildJogButton(left, width: btnSize, height: btnSize),
-                    SizedBox(width: btnSize),
-                    _buildJogButton(right, width: btnSize, height: btnSize),
-                  ],
-                ),
-                _buildJogButton(down, width: btnSize, height: btnSize),
+                _buildJogButton(left, width: btnSize, height: btnSize),
+                _buildJogButton("HOME", width: btnSize, height: btnSize, isCircle: true),
+                _buildJogButton(right, width: btnSize, height: btnSize),
               ],
             ),
-            const SizedBox(width: 20),
-            Container(
-              padding: const EdgeInsets.all(4),
-              decoration: BoxDecoration(
-                color: AppColors.bgPanel.withOpacity(0.5),
-                borderRadius: BorderRadius.circular(12),
-                border: Border.all(color: AppColors.border.withOpacity(0.5)),
-              ),
-              child: Column(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  _buildJogButton(zUp, width: btnSize, height: 65),
-                  const SizedBox(height: 8),
-                  _buildJogButton(zDown, width: btnSize, height: 65),
-                ],
-              ),
-            ),
+            _buildJogButton(down, width: btnSize, height: btnSize),
+          ],
+        ),
+        const SizedBox(width: 50), // Spacing between XY and Z
+        // Vertical layout for Z
+        Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            _buildJogButton(zUp, width: btnSize, height: btnSize),
+            const SizedBox(height: 20),
+            _buildJogButton(zDown, width: btnSize, height: btnSize),
           ],
         ),
       ],
     );
   }
 
-  Widget _buildJogButton(String label, {double? width, double height = 50}) {
-    Color getTextColor(String lbl) {
-      if (lbl.contains('+')) return AppColors.accentGreen;
-      if (lbl.contains('-')) return AppColors.accentRed;
-      return Colors.black87;
+ // --- UPDATED JOG BUTTON FACTORY ---
+  Widget _buildJogButton(String label, {double width = 65, double height = 65, bool isCircle = false}) {
+    Color btnColor;
+    
+    // Exact Professional Color Mapping
+    if (label == 'HOME') {
+      btnColor = AppColors.accentBlue; // Center Home is Blue
+    } else if (label.startsWith('X') || label.startsWith('Rx')) {
+      btnColor = AppColors.accentRed;
+    } else if (label.startsWith('Y') || label.startsWith('Ry')) {
+      btnColor = AppColors.accentGreen;
+    } else if (label.startsWith('Z') || label.startsWith('Rz')) {
+      btnColor = AppColors.accentBlue;
+    } else if (label.startsWith('J')) {
+      // Joints: Negative is Red, Positive is Green
+      btnColor = label.contains('+') ? AppColors.accentGreen : AppColors.accentRed;
+    } else {
+      btnColor = Colors.grey;
     }
 
-    return GestureDetector(
-      onTapDown: (_) => _onPadInteract(label, true),
-      onTapUp: (_) => _onPadInteract(label, false),
-      onTapCancel: () => _onPadInteract(label, false),
-      child: Container(
-        width: width,
-        height: height,
-        margin: const EdgeInsets.all(4),
-        decoration: BoxDecoration(
-          color: Colors.white,
-          borderRadius: BorderRadius.circular(8),
-          border: Border.all(color: AppColors.border, width: 1.5),
-          boxShadow: const [
-            BoxShadow(
-              color: Colors.black26,
-              offset: Offset(0, 4),
-              blurRadius: 4,
-            ),
-          ],
-        ),
-        alignment: Alignment.center,
-        child: Text(
-          label,
-          style: TextStyle(
-            fontWeight: FontWeight.bold,
-            fontSize: 18,
-            color: getTextColor(label),
-          ),
-        ),
-      ),
+    return Tactile3DButton(
+      label: label,
+      baseColor: btnColor,
+      width: width,
+      height: height,
+      isCircle: isCircle,
+      onTapDown: () {
+        if (label == 'HOME') {
+          _sendCommand('TRIGGER_HOME');
+        } else {
+          _onPadInteract(label, true);
+        }
+      },
+      onTapUp: () {
+        if (label != 'HOME') _onPadInteract(label, false);
+      },
     );
   }
 
@@ -4230,6 +4229,102 @@ class _LiveExecutionSheetState extends State<LiveExecutionSheet> {
             ),
           ),
         ],
+      ),
+    );
+  }
+}
+
+
+// =========================================================================
+// NEW: TACTILE 3D BUTTON COMPONENT
+// =========================================================================
+class Tactile3DButton extends StatefulWidget {
+  final String label;
+  final double width;
+  final double height;
+  final Color baseColor;
+  final VoidCallback onTapDown;
+  final VoidCallback onTapUp;
+  final bool isCircle;
+
+  const Tactile3DButton({
+    super.key,
+    required this.label,
+    required this.baseColor,
+    required this.onTapDown,
+    required this.onTapUp,
+    this.width = 65,
+    this.height = 65,
+    this.isCircle = false,
+  });
+
+  @override
+  State<Tactile3DButton> createState() => _Tactile3DButtonState();
+}
+
+class _Tactile3DButtonState extends State<Tactile3DButton> {
+  bool _isPressed = false;
+
+  @override
+  Widget build(BuildContext context) {
+    // Generate a darker shade for the 3D edge
+    final darkerColor = Color.lerp(widget.baseColor, Colors.black, 0.4)!;
+    // Highlight color for the font based on the label length
+    final double fontSize = widget.label.length > 3 ? 14 : 24;
+
+    return GestureDetector(
+      onTapDown: (_) {
+        setState(() => _isPressed = true);
+        widget.onTapDown();
+      },
+      onTapUp: (_) {
+        setState(() => _isPressed = false);
+        widget.onTapUp();
+      },
+      onTapCancel: () {
+        setState(() => _isPressed = false);
+        widget.onTapUp();
+      },
+      child: AnimatedContainer(
+        duration: const Duration(milliseconds: 50), // Snappy physical push
+        width: widget.width,
+        height: widget.height,
+        // The container moves down via padding when pressed, simulating a push
+        margin: EdgeInsets.only(
+          top: _isPressed ? 6 : 0, 
+          bottom: _isPressed ? 0 : 6,
+          left: 4, right: 4,
+        ),
+        decoration: BoxDecoration(
+          color: widget.baseColor,
+          shape: widget.isCircle ? BoxShape.circle : BoxShape.rectangle,
+          borderRadius: widget.isCircle ? null : BorderRadius.circular(10),
+          boxShadow: _isPressed
+              ? [] // Flat when pressed
+              : [
+                  // 3D Bottom Edge
+                  BoxShadow(
+                    color: darkerColor,
+                    offset: const Offset(0, 6),
+                  ),
+                  // Drop Shadow
+                  const BoxShadow(
+                    color: Colors.black45,
+                    offset: Offset(0, 8),
+                    blurRadius: 4,
+                  ),
+                ],
+        ),
+        alignment: Alignment.center,
+        child: Text(
+          widget.label,
+          style: TextStyle(
+            color: Colors.white, // All labels bold white per request
+            fontWeight: FontWeight.bold,
+            fontSize: fontSize,
+            letterSpacing: widget.label == "HOME" ? 1 : 0,
+          ),
+        ),
       ),
     );
   }

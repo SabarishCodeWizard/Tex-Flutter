@@ -158,7 +158,7 @@ class _ControllerScreenState extends State<ControllerScreen> {
     'j6': 0.0,
   };
   List<Map<String, dynamic>> _tpList = [];
-
+  List<Map<String, dynamic>> _prProgramData = []; // <-- ADD THIS LINE
   String _currentView = "MAIN";
 
   @override
@@ -377,6 +377,12 @@ class _ControllerScreenState extends State<ControllerScreen> {
 
           if (data['tp_list'] != null) {
             _tpList = List<Map<String, dynamic>>.from(data['tp_list']);
+          }
+          // <-- ADD THIS BLOCK BELOW -->
+          if (data['pr_program_data'] != null) {
+            _prProgramData = List<Map<String, dynamic>>.from(
+              data['pr_program_data'],
+            );
           }
         });
       }
@@ -1942,31 +1948,86 @@ class _ControllerScreenState extends State<ControllerScreen> {
                   ),
                   const SizedBox(height: 15),
 
-                  // Calculate Trajectory
+                  // --- Calculate Trajectory Button & Loading State ---
                   _buildColorButton(
                     _isCalculatingTrajectory
-                        ? "CALCULATING..."
+                        ? "CANCEL CALCULATION" // Changes to Cancel when active
                         : "CALCULATE TRAJECTORY",
                     _isCalculatingTrajectory
-                        ? AppColors.accentYellow
-                        : AppColors.accentBlue,
+                        ? AppColors
+                              .accentRed // Red to indicate a Stop/Cancel action
+                        : AppColors.accentBlue, // Default Blue
                     () {
-                      if (!_isCalculatingTrajectory) {
+                      if (_isCalculatingTrajectory) {
+                        // If already calculating, send the cancel command from your C++ backend
+                        _sendCommand('CANCEL_CALCULATION');
+                      } else {
+                        // Otherwise, start the calculation
                         _sendCommand('CALCULATE_TRAJECTORY');
                       }
                     },
-                    isActive: _isCalculatingTrajectory,
+                    isActive:
+                        _isCalculatingTrajectory, // Adds the glowing elevation effect
                     icon: _isCalculatingTrajectory
-                        ? Icons.hourglass_top
-                        : Icons.route,
+                        ? Icons
+                              .cancel // Cancel icon
+                        : Icons.route, // Path icon
                   ),
+
+                  // --- NEW: Professional Industrial Loading Bar ---
+                  // This only appears when the backend says isCalculatingTrajectory == true
+                  if (_isCalculatingTrajectory) ...[
+                    const SizedBox(height: 8),
+                    Container(
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 12,
+                        vertical: 10,
+                      ),
+                      decoration: BoxDecoration(
+                        color: AppColors.lcdBg,
+                        border: Border.all(
+                          color: AppColors.accentYellow,
+                          width: 1.5,
+                        ),
+                        borderRadius: BorderRadius.circular(6),
+                      ),
+                      child: Row(
+                        mainAxisAlignment: MainAxisAlignment.center,
+                        children: const [
+                          SizedBox(
+                            width: 16,
+                            height: 16,
+                            child: CircularProgressIndicator(
+                              color: AppColors.accentYellow,
+                              strokeWidth: 2.5,
+                            ),
+                          ),
+                          SizedBox(width: 12),
+                          Text(
+                            "GENERATING TRAJECTORY DATA...",
+                            style: TextStyle(
+                              color: AppColors.accentYellow,
+                              fontSize: 12,
+                              fontWeight: FontWeight.bold,
+                              fontFamily: 'monospace',
+                              letterSpacing: 1.2,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ],
+
                   const SizedBox(height: 15),
 
                   // Run Program
                   _buildColorButton(
                     "RUN PROGRAM",
                     AppColors.accentGreen,
-                    () => _sendCommand('RUN_PROGRAM'),
+                    () => _showPrgSelectionSheet(
+                      "Run",
+                      _showPrgRunConfirmDialog,
+                    ), // <-- Triggers the row selection sheet
                     icon: Icons.play_arrow,
                   ),
 
@@ -1987,9 +2048,14 @@ class _ControllerScreenState extends State<ControllerScreen> {
                   const SizedBox(height: 8),
                   GestureDetector(
                     onTap: () {
-                      showDialog(
+                      showModalBottomSheet(
                         context: context,
-                        builder: (ctx) => LiveInstructionDialog(this),
+                        backgroundColor: Colors.transparent,
+                        isScrollControlled: true,
+                        builder: (ctx) => LiveExecutionSheet(
+                          this,
+                          isPrgMode: true,
+                        ), // <-- ADD isPrgMode: true
                       );
                     },
                     child: Container(
@@ -3000,6 +3066,196 @@ class _ControllerScreenState extends State<ControllerScreen> {
     );
   }
 
+  // =========================================================================
+  // PRG SPECIFIC: SELECTION SHEET & RUN CONFIRMATION
+  // =========================================================================
+  void _showPrgSelectionSheet(
+    String actionTitle,
+    Function(int index, Map<String, dynamic> prgItem) onSelect,
+  ) {
+    showModalBottomSheet(
+      context: context,
+      backgroundColor: AppColors.bgPanel,
+      isScrollControlled: true,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(16)),
+      ),
+      builder: (ctx) => Container(
+        height: MediaQuery.of(context).size.height * 0.6,
+        padding: const EdgeInsets.only(top: 10),
+        child: Column(
+          children: [
+            Container(
+              width: 50,
+              height: 5,
+              decoration: BoxDecoration(
+                color: Colors.grey[600],
+                borderRadius: BorderRadius.circular(10),
+              ),
+            ),
+            const SizedBox(height: 15),
+            Text(
+              "$actionTitle PRG Instruction",
+              style: const TextStyle(
+                fontSize: 18,
+                fontWeight: FontWeight.bold,
+                color: AppColors.accentGreen,
+              ),
+            ),
+            const Divider(color: AppColors.border, height: 30),
+            Expanded(
+              child: _prProgramData.isEmpty
+                  ? const Center(
+                      child: Text(
+                        "No program instructions available.",
+                        style: TextStyle(
+                          color: Colors.grey,
+                          fontStyle: FontStyle.italic,
+                        ),
+                      ),
+                    )
+                  : ListView.builder(
+                      itemCount: _prProgramData.length,
+                      itemBuilder: (ctx, i) {
+                        final prgItem = _prProgramData[i];
+
+                        // Parse standard PRG variables safely
+                        String name =
+                            prgItem['name'] ?? prgItem['inst'] ?? "CMD";
+                        String val = prgItem['value'] ?? prgItem['data'] ?? "";
+
+                        return ListTile(
+                          leading: CircleAvatar(
+                            backgroundColor: AppColors.btnBg,
+                            child: Text(
+                              "${i + 1}",
+                              style: const TextStyle(
+                                color: Colors.white,
+                                fontSize: 12,
+                                fontWeight: FontWeight.bold,
+                              ),
+                            ),
+                          ),
+                          title: Text(
+                            name,
+                            style: const TextStyle(
+                              fontWeight: FontWeight.bold,
+                              color: Colors.white,
+                            ),
+                          ),
+                          subtitle: Text(
+                            val,
+                            style: const TextStyle(
+                              fontFamily: 'monospace',
+                              color: Colors.grey,
+                              fontSize: 12,
+                            ),
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                          ),
+                          trailing: const Icon(
+                            Icons.play_arrow,
+                            color: AppColors.accentGreen,
+                            size: 20,
+                          ),
+                          onTap: () {
+                            Navigator.pop(ctx);
+                            onSelect(i, prgItem);
+                          },
+                        );
+                      },
+                    ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  void _showPrgRunConfirmDialog(int index, Map<String, dynamic> prgItem) {
+    String name = prgItem['name'] ?? prgItem['inst'] ?? "CMD";
+    String val = prgItem['value'] ?? prgItem['data'] ?? "";
+
+    showDialog(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        backgroundColor: AppColors.bgPanel,
+        shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(12),
+          side: const BorderSide(color: AppColors.accentGreen, width: 1.5),
+        ),
+        title: const Row(
+          children: [
+            Icon(Icons.play_circle_fill, color: AppColors.accentGreen),
+            SizedBox(width: 10),
+            Text(
+              "Run Program Step?",
+              style: TextStyle(
+                color: AppColors.accentGreen,
+                fontWeight: FontWeight.bold,
+                fontSize: 16,
+              ),
+            ),
+          ],
+        ),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(
+              "Step ${index + 1}: $name",
+              style: const TextStyle(
+                color: AppColors.accentBlue,
+                fontWeight: FontWeight.bold,
+                fontSize: 15,
+              ),
+            ),
+            const SizedBox(height: 6),
+            Text(
+              "Data: $val",
+              style: const TextStyle(
+                color: Colors.grey,
+                fontSize: 13,
+                fontFamily: 'monospace',
+              ),
+            ),
+          ],
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx),
+            child: const Text(
+              "CANCEL",
+              style: TextStyle(color: Colors.grey, fontWeight: FontWeight.bold),
+            ),
+          ),
+          ElevatedButton(
+            style: ElevatedButton.styleFrom(
+              backgroundColor: AppColors.accentGreen,
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(6),
+              ),
+            ),
+            onPressed: () {
+              // 1. Select the specific PRG Row
+              _sendCommand('SELECT_PR_ROW', index);
+              // 2. Trigger the run command
+              _sendCommand('RUN_PROGRAM');
+              Navigator.pop(ctx);
+            },
+            child: const Text(
+              "RUN",
+              style: TextStyle(
+                color: Colors.black,
+                fontWeight: FontWeight.bold,
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
   void _showRunConfirmDialog(int index, Map<String, dynamic> tp) {
     showDialog(
       context: context,
@@ -3298,170 +3554,455 @@ class _ControllerScreenState extends State<ControllerScreen> {
 }
 
 // =========================================================================
-// LIVE INSTRUCTION MONITOR WIDGET (STATEFUL DIALOG)
+// NEW: LIVE EXECUTION BOTTOM SHEET WIDGET (INDUSTRIAL STYLING)
 // =========================================================================
-class LiveInstructionDialog extends StatefulWidget {
+class LiveExecutionSheet extends StatefulWidget {
   final _ControllerScreenState parentState;
-  const LiveInstructionDialog(this.parentState, {super.key});
+  final bool isPrgMode;
+
+  const LiveExecutionSheet(
+    this.parentState, {
+    super.key,
+    this.isPrgMode = false,
+  });
 
   @override
-  State<LiveInstructionDialog> createState() => _LiveInstructionDialogState();
+  State<LiveExecutionSheet> createState() => _LiveExecutionSheetState();
 }
 
-class _LiveInstructionDialogState extends State<LiveInstructionDialog> {
+class _LiveExecutionSheetState extends State<LiveExecutionSheet> {
   Timer? _timer;
+  final ScrollController _scrollController = ScrollController();
+  int _lastHighlighted = -1;
 
   @override
   void initState() {
     super.initState();
-    // Auto-refresh the dialog every 200ms to show live data
+    // Auto-refresh the popup every 200ms to fetch live index & list updates
     _timer = Timer.periodic(const Duration(milliseconds: 200), (t) {
-      if (mounted) setState(() {});
+      if (mounted) {
+        setState(() {});
+        _scrollToHighlight();
+      }
     });
+  }
+
+  void _scrollToHighlight() {
+    final p = widget.parentState;
+    int current = p._highlightedInstruction;
+
+    // Select the correct list to check length
+    final currentList = widget.isPrgMode ? p._prProgramData : p._tpList;
+
+    if (current >= 0 && current != _lastHighlighted && currentList.isNotEmpty) {
+      _lastHighlighted = current;
+
+      double rowHeight = 60.0;
+      double targetOffset = current * rowHeight;
+
+      if (_scrollController.hasClients) {
+        double maxScroll = _scrollController.position.maxScrollExtent;
+        if (targetOffset > maxScroll) targetOffset = maxScroll;
+        if (targetOffset < 0) targetOffset = 0;
+
+        _scrollController.animateTo(
+          targetOffset,
+          duration: const Duration(milliseconds: 300),
+          curve: Curves.easeInOut,
+        );
+      }
+    }
   }
 
   @override
   void dispose() {
     _timer?.cancel();
+    _scrollController.dispose();
     super.dispose();
+  }
+
+  static const TextStyle _headerStyle = TextStyle(
+    color: Colors.grey,
+    fontSize: 10,
+    fontWeight: FontWeight.bold,
+    letterSpacing: 1,
+  );
+
+  // --- NEW: PROFESSIONAL ROW DETAILS POPUP ---
+  void _showRowDetailsDialog(
+    BuildContext context,
+    int index,
+    String inst,
+    String name,
+    String value,
+    String speed,
+  ) {
+    showDialog(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        backgroundColor: AppColors.bgPanel,
+        shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(12),
+          side: const BorderSide(color: AppColors.accentPurple, width: 1.5),
+        ),
+        title: Row(
+          children: const [
+            Icon(Icons.data_object, color: AppColors.accentPurple),
+            SizedBox(width: 10),
+            Text(
+              "INSTRUCTION DETAILS",
+              style: TextStyle(
+                color: AppColors.accentPurple,
+                fontWeight: FontWeight.bold,
+                fontSize: 16,
+                letterSpacing: 1,
+              ),
+            ),
+          ],
+        ),
+        content: SingleChildScrollView(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              _buildDetailRow("STEP NO", "${index + 1}"),
+              const SizedBox(height: 8),
+              _buildDetailRow("INSTRUCTION", inst),
+              const SizedBox(height: 8),
+              _buildDetailRow("NAME", name),
+              const SizedBox(height: 8),
+              _buildDetailRow("VALUE / DATA", value),
+              const SizedBox(height: 8),
+              _buildDetailRow("SPEED", speed),
+            ],
+          ),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx),
+            child: const Text(
+              "CLOSE",
+              style: TextStyle(color: Colors.grey, fontWeight: FontWeight.bold),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  // Helper for the details popup layout
+  Widget _buildDetailRow(String label, String value) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+      decoration: BoxDecoration(
+        color: AppColors.lcdBg,
+        borderRadius: BorderRadius.circular(6),
+        border: Border.all(color: AppColors.border),
+      ),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          SizedBox(
+            width: 100,
+            child: Text(
+              label,
+              style: const TextStyle(
+                color: Colors.grey,
+                fontSize: 11,
+                fontWeight: FontWeight.bold,
+                letterSpacing: 0.5,
+              ),
+            ),
+          ),
+          Expanded(
+            child: Text(
+              value,
+              style: const TextStyle(
+                color: Colors.white,
+                fontFamily: 'monospace',
+                fontSize: 13,
+                fontWeight: FontWeight.bold,
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
   }
 
   @override
   Widget build(BuildContext context) {
-    final p = widget.parentState; // Access the main state variables
+    final p = widget.parentState;
 
-    return AlertDialog(
-      backgroundColor: AppColors.bgPanel,
-      shape: RoundedRectangleBorder(
-        borderRadius: BorderRadius.circular(12),
-        side: const BorderSide(color: AppColors.accentPurple, width: 2),
+    // Smart List Selection
+    final listData = widget.isPrgMode ? p._prProgramData : p._tpList;
+    final activeFileName = widget.isPrgMode
+        ? p._currentPrName
+        : p._currentTpName;
+
+    return Container(
+      height: MediaQuery.of(context).size.height * 0.70,
+      decoration: const BoxDecoration(
+        color: AppColors.bgPanel,
+        borderRadius: BorderRadius.vertical(top: Radius.circular(16)),
       ),
-      title: const Row(
-        children: [
-          Icon(Icons.monitor, color: AppColors.accentPurple, size: 28),
-          SizedBox(width: 10),
-          Text(
-            "LIVE MONITOR",
-            style: TextStyle(
-              color: AppColors.accentPurple,
-              fontWeight: FontWeight.bold,
-              fontSize: 18,
-            ),
-          ),
-        ],
-      ),
-      content: Column(
-        mainAxisSize: MainAxisSize.min,
+      child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
-          // Step & Instruction Details
-          Container(
-            padding: const EdgeInsets.all(12),
-            decoration: BoxDecoration(
-              color: AppColors.lcdBg,
-              borderRadius: BorderRadius.circular(6),
-              border: Border.all(color: AppColors.border),
+          Center(
+            child: Container(
+              margin: const EdgeInsets.only(top: 10, bottom: 15),
+              width: 50,
+              height: 5,
+              decoration: BoxDecoration(
+                color: Colors.grey[600],
+                borderRadius: BorderRadius.circular(10),
+              ),
             ),
-            child: Column(
+          ),
+
+          Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 20),
+            child: Row(
               children: [
+                const Icon(Icons.monitor, color: AppColors.accentPurple),
+                const SizedBox(width: 10),
                 const Text(
-                  "EXECUTING STEP",
+                  "AUTO EXECUTION MONITOR",
                   style: TextStyle(
-                    color: Colors.grey,
-                    fontSize: 10,
-                    fontWeight: FontWeight.bold,
-                    letterSpacing: 1,
-                  ),
-                ),
-                const SizedBox(height: 5),
-                Text(
-                  p._highlightedInstruction >= 0
-                      ? "#${p._highlightedInstruction}"
-                      : "-",
-                  style: const TextStyle(
-                    color: AppColors.accentGreen,
-                    fontSize: 24,
-                    fontWeight: FontWeight.bold,
-                  ),
-                ),
-                const SizedBox(height: 10),
-                Text(
-                  p._currentInstructionString.isNotEmpty
-                      ? p._currentInstructionString
-                      : "Standing By...",
-                  style: const TextStyle(
-                    color: Colors.white,
                     fontSize: 16,
-                    fontFamily: 'monospace',
                     fontWeight: FontWeight.bold,
+                    color: AppColors.accentPurple,
+                    letterSpacing: 1.2,
                   ),
-                  textAlign: TextAlign.center,
+                ),
+                const Spacer(),
+                Container(
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 8,
+                    vertical: 4,
+                  ),
+                  decoration: BoxDecoration(
+                    color: AppColors.lcdBg,
+                    border: Border.all(color: AppColors.border),
+                    borderRadius: BorderRadius.circular(4),
+                  ),
+                  child: Text(
+                    activeFileName,
+                    style: const TextStyle(
+                      color: AppColors.accentBlue,
+                      fontSize: 12,
+                      fontWeight: FontWeight.bold,
+                      fontFamily: 'monospace',
+                    ),
+                  ),
                 ),
               ],
             ),
           ),
-          const SizedBox(height: 15),
+          const SizedBox(height: 10),
+          const Divider(color: AppColors.border, height: 1, thickness: 1),
 
-          // Real-Time Position Box
-          Container(
-            padding: const EdgeInsets.all(12),
-            decoration: BoxDecoration(
-              color: AppColors.lcdBg,
-              borderRadius: BorderRadius.circular(6),
-              border: Border.all(color: AppColors.border),
-            ),
-            child: Column(
-              children: [
-                const Text(
-                  "REAL-TIME POSITION",
-                  style: TextStyle(
-                    color: Colors.grey,
-                    fontSize: 10,
-                    fontWeight: FontWeight.bold,
-                    letterSpacing: 1,
+          // --- UPDATED: SEPARATED HEADERS ---
+          Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+            child: Row(
+              children: const [
+                SizedBox(width: 40, child: Text("S.NO", style: _headerStyle)),
+                Expanded(flex: 2, child: Text("INST", style: _headerStyle)),
+                Expanded(flex: 3, child: Text("NAME", style: _headerStyle)),
+                Expanded(flex: 4, child: Text("VALUE", style: _headerStyle)),
+                SizedBox(
+                  width: 50,
+                  child: Text(
+                    "SPEED",
+                    textAlign: TextAlign.right,
+                    style: _headerStyle,
                   ),
                 ),
-                const SizedBox(height: 8),
-                Row(
-                  mainAxisAlignment: MainAxisAlignment.spaceEvenly,
-                  children: [
-                    Text(
-                      "X: ${p._cartesian['x']!.toStringAsFixed(1)}",
-                      style: const TextStyle(
-                        color: AppColors.accentBlue,
-                        fontFamily: 'monospace',
-                        fontWeight: FontWeight.bold,
+              ],
+            ),
+          ),
+          const Divider(color: AppColors.border, height: 1, thickness: 1),
+
+          Expanded(
+            child: listData.isEmpty
+                ? const Center(
+                    child: Text(
+                      "No program data available.\nLoad a TP or PRG file.",
+                      textAlign: TextAlign.center,
+                      style: TextStyle(
+                        color: Colors.grey,
+                        fontStyle: FontStyle.italic,
                       ),
                     ),
-                    Text(
-                      "Y: ${p._cartesian['y']!.toStringAsFixed(1)}",
-                      style: const TextStyle(
-                        color: AppColors.accentBlue,
-                        fontFamily: 'monospace',
-                        fontWeight: FontWeight.bold,
-                      ),
+                  )
+                : ListView.builder(
+                    controller: _scrollController,
+                    itemCount: listData.length,
+                    itemBuilder: (context, index) {
+                      final item = listData[index];
+                      bool isHighlighted = (index == p._highlightedInstruction);
+
+                      // --- UPDATED: PARSE INST AND NAME SEPARATELY ---
+                      String inst =
+                          item['inst'] ??
+                          item['type'] ??
+                          item['instruction'] ??
+                          "CMD";
+                      String name = item['name'] ?? "-";
+                      String value = item['value'] ?? item['data'] ?? "-";
+                      String speed = item['speed']?.toString() ?? "-";
+
+                      return InkWell(
+                        onTap: () => _showRowDetailsDialog(
+                          context,
+                          index,
+                          inst,
+                          name,
+                          value,
+                          speed,
+                        ),
+                        child: Container(
+                          height: 60.0,
+                          decoration: BoxDecoration(
+                            color: isHighlighted
+                                ? AppColors.accentPurple.withOpacity(0.15)
+                                : Colors.transparent,
+                            border: Border(
+                              left: BorderSide(
+                                color: isHighlighted
+                                    ? AppColors.accentPurple
+                                    : Colors.transparent,
+                                width: 4,
+                              ),
+                              bottom: const BorderSide(
+                                color: AppColors.border,
+                                width: 0.5,
+                              ),
+                            ),
+                          ),
+                          padding: const EdgeInsets.symmetric(horizontal: 16),
+                          child: Row(
+                            children: [
+                              SizedBox(
+                                width: 40,
+                                child: Text(
+                                  "${index + 1}",
+                                  style: TextStyle(
+                                    color: isHighlighted
+                                        ? Colors.white
+                                        : Colors.grey[600],
+                                    fontWeight: FontWeight.bold,
+                                    fontSize: 13,
+                                  ),
+                                ),
+                              ),
+                              // INST COLUMN
+                              Expanded(
+                                flex: 2,
+                                child: Text(
+                                  inst,
+                                  style: TextStyle(
+                                    color: isHighlighted
+                                        ? AppColors.accentPurple
+                                        : Colors.white,
+                                    fontWeight: FontWeight.bold,
+                                    fontSize: 12,
+                                  ),
+                                  maxLines: 1,
+                                  overflow: TextOverflow.ellipsis,
+                                ),
+                              ),
+                              // NAME COLUMN
+                              Expanded(
+                                flex: 3,
+                                child: Text(
+                                  name,
+                                  style: TextStyle(
+                                    color: isHighlighted
+                                        ? Colors.white
+                                        : AppColors.textSec,
+                                    fontWeight: FontWeight.bold,
+                                    fontSize: 12,
+                                  ),
+                                  maxLines: 1,
+                                  overflow: TextOverflow.ellipsis,
+                                ),
+                              ),
+                              // VALUE COLUMN
+                              Expanded(
+                                flex: 4,
+                                child: Text(
+                                  value,
+                                  style: TextStyle(
+                                    color: isHighlighted
+                                        ? Colors.white
+                                        : AppColors.textSec,
+                                    fontFamily: 'monospace',
+                                    fontSize: 11,
+                                  ),
+                                  maxLines: 2,
+                                  overflow: TextOverflow.ellipsis,
+                                ),
+                              ),
+                              // SPEED COLUMN
+                              SizedBox(
+                                width: 50,
+                                child: Text(
+                                  speed,
+                                  textAlign: TextAlign.right,
+                                  style: TextStyle(
+                                    color: isHighlighted
+                                        ? AppColors.accentYellow
+                                        : Colors.grey[600],
+                                    fontFamily: 'monospace',
+                                    fontSize: 12,
+                                  ),
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
+                      );
+                    },
+                  ),
+          ),
+
+          Container(
+            padding: const EdgeInsets.only(
+              left: 16,
+              right: 16,
+              top: 12,
+              bottom: 25,
+            ),
+            decoration: const BoxDecoration(
+              color: AppColors.lcdBg,
+              border: Border(top: BorderSide(color: AppColors.border)),
+            ),
+            child: Row(
+              children: [
+                const Icon(Icons.bolt, color: AppColors.accentGreen, size: 20),
+                const SizedBox(width: 10),
+                Expanded(
+                  child: Text(
+                    p._currentInstructionString.isNotEmpty
+                        ? p._currentInstructionString
+                        : "System Standing By...",
+                    style: const TextStyle(
+                      color: AppColors.accentGreen,
+                      fontFamily: 'monospace',
+                      fontWeight: FontWeight.bold,
+                      fontSize: 13,
                     ),
-                    Text(
-                      "Z: ${p._cartesian['z']!.toStringAsFixed(1)}",
-                      style: const TextStyle(
-                        color: AppColors.accentBlue,
-                        fontFamily: 'monospace',
-                        fontWeight: FontWeight.bold,
-                      ),
-                    ),
-                  ],
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                  ),
                 ),
               ],
             ),
           ),
         ],
       ),
-      actions: [
-        TextButton(
-          onPressed: () => Navigator.of(context).pop(),
-          child: const Text("CLOSE", style: TextStyle(color: Colors.grey)),
-        ),
-      ],
     );
   }
 }

@@ -239,12 +239,13 @@ class _ControllerScreenState extends State<ControllerScreen> {
         onError: (error) => _handleDisconnect("Failed to connect to server."),
       );
 
-      // Instantly send the REMOTE_AUTH command required by your C++ backend
+    // Instantly send the REMOTE_AUTH command required by your C++ backend
       final authMsg = jsonEncode({
         "command": "REMOTE_AUTH",
         "username": _userController.text.trim(),
         "password": _passController.text.trim(),
         "role": _selectedRole,
+        "client_type": "Mobile App", // <--- NEW: Identify as Mobile
       });
       _channel!.sink.add(authMsg);
     } catch (e) {

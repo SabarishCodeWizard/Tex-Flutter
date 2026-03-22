@@ -1,8 +1,12 @@
 import 'dart:async';
 import 'dart:convert';
+import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:web_socket_channel/web_socket_channel.dart';
+import 'package:device_info_plus/device_info_plus.dart'; // <-- ADD THIS
+import 'package:android_id/android_id.dart';  
+import 'package:shared_preferences/shared_preferences.dart';           // <-- ADD THIS
 
 void main() {
   WidgetsFlutterBinding.ensureInitialized();
@@ -63,8 +67,57 @@ class ControllerScreen extends StatefulWidget {
 }
 
 class _ControllerScreenState extends State<ControllerScreen> {
-  // --- LOGIN & CONNECTION STATE ---
+ // --- LOGIN & CONNECTION STATE ---
   AppState _appState = AppState.disconnected;
+
+  // --- NEW: Holds the Device ID and Registration State ---
+  String _myDeviceId = "Fetching...";
+  bool _isRegistered = false; 
+
+  @override
+  void initState() {
+    super.initState();
+    _fetchDeviceId();
+  }
+
+  Future<void> _fetchDeviceId() async {
+    String? id;
+    try {
+      if (Platform.isAndroid) {
+        const androidIdPlugin = AndroidId();
+        id = await androidIdPlugin.getId();
+      } else if (Platform.isIOS) {
+        final deviceInfo = DeviceInfoPlugin();
+        final iosInfo = await deviceInfo.iosInfo;
+        id = iosInfo.identifierForVendor;
+      } else if (Platform.isLinux) {
+        final file = File('/etc/machine-id');
+        if (await file.exists()) {
+          id = await file.readAsString();
+          id = id.trim().substring(0, 12);
+        } else {
+          id = "LINUX_DEV_DEVICE";
+        }
+      } else {
+        id = "UNKNOWN_DEVICE";
+      }
+    } catch (e) {
+      debugPrint("Failed to get Device ID: $e");
+      id = "UNKNOWN_DEVICE";
+    }
+
+    // --- READ FROM LOCAL STORAGE ---
+    final prefs = await SharedPreferences.getInstance();
+    bool registeredStatus = prefs.getBool('is_registered') ?? false;
+
+    if (mounted) {
+      setState(() {
+        _myDeviceId = id ?? "UNKNOWN_DEVICE";
+        _isRegistered = registeredStatus; // Sets the UI state
+      });
+    }
+  }
+  
   String _loginStatusMsg = "";
   Color _loginStatusColor = Colors.transparent;
   bool _isKickedOrRejected = false;
@@ -212,7 +265,7 @@ class _ControllerScreenState extends State<ControllerScreen> {
   // WEBSOCKET LOGIC
   // =========================================================================
 
-  void _initiateLogin() {
+Future<void> _initiateLogin() async {
     if (_ipController.text.isEmpty ||
         _userController.text.isEmpty ||
         _passController.text.isEmpty) {
@@ -239,13 +292,14 @@ class _ControllerScreenState extends State<ControllerScreen> {
         onError: (error) => _handleDisconnect("Failed to connect to server."),
       );
 
-    // Instantly send the REMOTE_AUTH command required by your C++ backend
+      // --- Add mac_address to the payload using our state variable ---
       final authMsg = jsonEncode({
         "command": "REMOTE_AUTH",
         "username": _userController.text.trim(),
         "password": _passController.text.trim(),
         "role": _selectedRole,
-        "client_type": "Mobile App", // <--- NEW: Identify as Mobile
+        "client_type": "Mobile App",
+        "mac_address": _myDeviceId, // <--- Sends the ID shown on screen
       });
       _channel!.sink.add(authMsg);
     } catch (e) {
@@ -320,11 +374,17 @@ class _ControllerScreenState extends State<ControllerScreen> {
           _loginStatusMsg = "Waiting for Physical Operator to Accept...";
           _loginStatusColor = AppColors.accentBlue;
         });
-      } else if (type == 'connection_accepted') {
+      }else if (type == 'connection_accepted') {
+        
+        // --- NEW: Save success to memory so ID hides next time ---
+        SharedPreferences.getInstance().then((prefs) {
+          prefs.setBool('is_registered', true);
+        });
+
         setState(() {
+          _isRegistered = true; // Instantly hide it from the UI
           _appState = AppState.connected;
-          _activeRole =
-              data['role'] ?? _selectedRole; // Grab the confirmed role
+          _activeRole = data['role'] ?? _selectedRole; 
           _loginStatusMsg = "";
         });
       }
@@ -705,6 +765,53 @@ class _ControllerScreenState extends State<ControllerScreen> {
                   letterSpacing: 1.5,
                 ),
               ),
+              const SizedBox(height: 25),
+
+              // --- NEW: DEVICE ID WITH COPY BUTTON (ONLY SHOWS IF NOT REGISTERED) ---
+              if (!_isRegistered)
+                Container(
+                  margin: const EdgeInsets.only(bottom: 25),
+                  padding: const EdgeInsets.symmetric(vertical: 12, horizontal: 15),
+                  decoration: BoxDecoration(
+                    color: AppColors.lcdBg,
+                    borderRadius: BorderRadius.circular(6),
+                    border: Border.all(color: AppColors.border),
+                  ),
+                  child: Row(
+                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                    children: [
+                      const Icon(Icons.fingerprint, color: AppColors.accentPurple, size: 20),
+                      Expanded(
+                        child: Padding(
+                          padding: const EdgeInsets.symmetric(horizontal: 10),
+                          child: Text(
+                            "Device ID: $_myDeviceId",
+                            style: const TextStyle(
+                              color: AppColors.accentPurple,
+                              fontFamily: 'monospace',
+                              fontWeight: FontWeight.bold,
+                              fontSize: 13,
+                            ),
+                            overflow: TextOverflow.ellipsis,
+                          ),
+                        ),
+                      ),
+                      GestureDetector(
+                        onTap: () {
+                          Clipboard.setData(ClipboardData(text: _myDeviceId));
+                          ScaffoldMessenger.of(context).showSnackBar(
+                            const SnackBar(
+                              content: Text("Device ID Copied!", style: TextStyle(fontWeight: FontWeight.bold)),
+                              backgroundColor: AppColors.accentGreen,
+                              duration: Duration(seconds: 2),
+                            ),
+                          );
+                        },
+                        child: const Icon(Icons.copy, color: AppColors.accentBlue, size: 24),
+                      ),
+                    ],
+                  ),
+                ),
               const SizedBox(height: 30),
 
               _buildLoginTextField(

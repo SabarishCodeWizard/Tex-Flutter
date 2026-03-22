@@ -5,8 +5,8 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:web_socket_channel/web_socket_channel.dart';
 import 'package:device_info_plus/device_info_plus.dart'; // <-- ADD THIS
-import 'package:android_id/android_id.dart';  
-import 'package:shared_preferences/shared_preferences.dart';           // <-- ADD THIS
+import 'package:android_id/android_id.dart';
+import 'package:shared_preferences/shared_preferences.dart'; // <-- ADD THIS
 
 void main() {
   WidgetsFlutterBinding.ensureInitialized();
@@ -67,12 +67,19 @@ class ControllerScreen extends StatefulWidget {
 }
 
 class _ControllerScreenState extends State<ControllerScreen> {
- // --- LOGIN & CONNECTION STATE ---
+  // --- LOGIN & CONNECTION STATE ---
   AppState _appState = AppState.disconnected;
 
   // --- NEW: Holds the Device ID and Registration State ---
   String _myDeviceId = "Fetching...";
-  bool _isRegistered = false; 
+  bool _isRegistered = false;
+
+  int _failedAttempts = 0;
+  DateTime? _lockoutEndTime;
+  Timer? _lockoutTimer;
+
+  bool get _isLockedOut =>
+      _lockoutEndTime != null && DateTime.now().isBefore(_lockoutEndTime!);
 
   @override
   void initState() {
@@ -117,7 +124,7 @@ class _ControllerScreenState extends State<ControllerScreen> {
       });
     }
   }
-  
+
   String _loginStatusMsg = "";
   Color _loginStatusColor = Colors.transparent;
   bool _isKickedOrRejected = false;
@@ -217,6 +224,7 @@ class _ControllerScreenState extends State<ControllerScreen> {
 
   @override
   void dispose() {
+    _lockoutTimer?.cancel(); // <--- ADD THIS LINE
     SystemChrome.setPreferredOrientations([DeviceOrientation.portraitUp]);
     _channel?.sink.close();
     _ipController.dispose();
@@ -265,7 +273,62 @@ class _ControllerScreenState extends State<ControllerScreen> {
   // WEBSOCKET LOGIC
   // =========================================================================
 
-Future<void> _initiateLogin() async {
+  void _processFailedAttempt() {
+    _failedAttempts++;
+    int lockoutSeconds = 0;
+
+    // Industrial tiered escalation
+    if (_failedAttempts == 3) {
+      lockoutSeconds = 30; // 30 seconds
+    } else if (_failedAttempts == 4) {
+      lockoutSeconds = 60; // 1 minute
+    } else if (_failedAttempts == 5) {
+      lockoutSeconds = 180; // 3 minutes
+    } else if (_failedAttempts >= 6) {
+      lockoutSeconds = 300; // 5 minutes max
+    }
+
+    if (lockoutSeconds > 0) {
+      _lockoutEndTime = DateTime.now().add(Duration(seconds: lockoutSeconds));
+      _startLockoutTimer();
+    }
+  }
+
+  void _startLockoutTimer() {
+    _lockoutTimer?.cancel();
+    _lockoutTimer = Timer.periodic(const Duration(seconds: 1), (timer) {
+      if (!mounted) {
+        timer.cancel();
+        return;
+      }
+
+      if (_isLockedOut) {
+        final remaining = _lockoutEndTime!.difference(DateTime.now()).inSeconds;
+        setState(() {
+          _loginStatusMsg =
+              "SYSTEM LOCKED. Too many invalid attempts.\nTry again in ${remaining}s.";
+          _loginStatusColor = AppColors.accentRed;
+        });
+      } else {
+        timer.cancel();
+        setState(() {
+          _lockoutEndTime = null;
+          _loginStatusMsg = "Lockout expired. You may try again.";
+          _loginStatusColor = AppColors.accentYellow;
+        });
+      }
+    });
+  }
+
+  Future<void> _initiateLogin() async {
+    if (_isLockedOut) {
+      final remaining = _lockoutEndTime!.difference(DateTime.now()).inSeconds;
+      setState(() {
+        _loginStatusMsg = "SYSTEM LOCKED. Try again in ${remaining}s.";
+        _loginStatusColor = AppColors.accentRed;
+      });
+      return;
+    }
     if (_ipController.text.isEmpty ||
         _userController.text.isEmpty ||
         _passController.text.isEmpty) {
@@ -340,14 +403,21 @@ Future<void> _initiateLogin() async {
       if (type == 'auth_rejected' ||
           type == 'connection_rejected' ||
           type == 'force_disconnect') {
-        _isKickedOrRejected = true; // Tell Flutter NOT to overwrite this message
+        _isKickedOrRejected =
+            true; // Tell Flutter NOT to overwrite this message
         String msg = data['message'] ?? "Connection denied.";
+
+        // --- ADD THIS BLOCK ---
+        if (type == 'auth_rejected') {
+          _processFailedAttempt();
+        }
 
         // --- NEW: Advanced User-in-Use parsing ---
         if (type == 'connection_rejected' && data.containsKey('active_user')) {
           String actUser = data['active_user'];
           String actRole = data['active_role'];
-          msg = "Access Denied: The server is currently in use by another client ($actRole: $actUser).";
+          msg =
+              "Access Denied: The server is currently in use by another client ($actRole: $actUser).";
         }
         // Translate the generic C++ backend messages into the requested professional format
         else if (msg.contains("Server is busy")) {
@@ -364,7 +434,8 @@ Future<void> _initiateLogin() async {
         } else if (msg.contains("Admin login is strictly prohibited")) {
           msg = "Access restricted: Remote Admin operations are prohibited.";
         } else if (type == 'force_disconnect') {
-          msg = "Session Terminated: You have been disconnected by the server admin.";
+          msg =
+              "Session Terminated: You have been disconnected by the server admin.";
         }
 
         _handleDisconnect(msg);
@@ -374,8 +445,8 @@ Future<void> _initiateLogin() async {
           _loginStatusMsg = "Waiting for Physical Operator to Accept...";
           _loginStatusColor = AppColors.accentBlue;
         });
-      }else if (type == 'connection_accepted') {
-        
+      } else if (type == 'connection_accepted') {
+        _failedAttempts = 0; // Reset attempts on successful login!
         // --- NEW: Save success to memory so ID hides next time ---
         SharedPreferences.getInstance().then((prefs) {
           prefs.setBool('is_registered', true);
@@ -384,7 +455,7 @@ Future<void> _initiateLogin() async {
         setState(() {
           _isRegistered = true; // Instantly hide it from the UI
           _appState = AppState.connected;
-          _activeRole = data['role'] ?? _selectedRole; 
+          _activeRole = data['role'] ?? _selectedRole;
           _loginStatusMsg = "";
         });
       }
@@ -771,7 +842,10 @@ Future<void> _initiateLogin() async {
               if (!_isRegistered)
                 Container(
                   margin: const EdgeInsets.only(bottom: 25),
-                  padding: const EdgeInsets.symmetric(vertical: 12, horizontal: 15),
+                  padding: const EdgeInsets.symmetric(
+                    vertical: 12,
+                    horizontal: 15,
+                  ),
                   decoration: BoxDecoration(
                     color: AppColors.lcdBg,
                     borderRadius: BorderRadius.circular(6),
@@ -780,7 +854,11 @@ Future<void> _initiateLogin() async {
                   child: Row(
                     mainAxisAlignment: MainAxisAlignment.spaceBetween,
                     children: [
-                      const Icon(Icons.fingerprint, color: AppColors.accentPurple, size: 20),
+                      const Icon(
+                        Icons.fingerprint,
+                        color: AppColors.accentPurple,
+                        size: 20,
+                      ),
                       Expanded(
                         child: Padding(
                           padding: const EdgeInsets.symmetric(horizontal: 10),
@@ -801,13 +879,20 @@ Future<void> _initiateLogin() async {
                           Clipboard.setData(ClipboardData(text: _myDeviceId));
                           ScaffoldMessenger.of(context).showSnackBar(
                             const SnackBar(
-                              content: Text("Device ID Copied!", style: TextStyle(fontWeight: FontWeight.bold)),
+                              content: Text(
+                                "Device ID Copied!",
+                                style: TextStyle(fontWeight: FontWeight.bold),
+                              ),
                               backgroundColor: AppColors.accentGreen,
                               duration: Duration(seconds: 2),
                             ),
                           );
                         },
-                        child: const Icon(Icons.copy, color: AppColors.accentBlue, size: 24),
+                        child: const Icon(
+                          Icons.copy,
+                          color: AppColors.accentBlue,
+                          size: 24,
+                        ),
                       ),
                     ],
                   ),
@@ -961,7 +1046,7 @@ Future<void> _initiateLogin() async {
                       borderRadius: BorderRadius.circular(6),
                     ),
                   ),
-                  onPressed: _initiateLogin,
+                  onPressed: _isLockedOut ? null : _initiateLogin,
                   child: const Text(
                     "CONNECT & LOGIN",
                     style: TextStyle(
@@ -1880,7 +1965,7 @@ Future<void> _initiateLogin() async {
     );
   }
 
- // =========================================================================
+  // =========================================================================
   // CARTESIAN VIEW (RESPONSIVE DYNAMIC D-PAD & VERTICAL TOGGLE)
   // =========================================================================
   Widget _buildCartesianView() {
@@ -1890,7 +1975,7 @@ Future<void> _initiateLogin() async {
         child: Column(
           children: [
             _buildTopHud(),
-            
+
             Expanded(
               child: Stack(
                 children: [
@@ -1902,24 +1987,35 @@ Future<void> _initiateLogin() async {
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
                         IconButton(
-                          icon: const Icon(Icons.arrow_back, color: Colors.white, size: 28),
+                          icon: const Icon(
+                            Icons.arrow_back,
+                            color: Colors.white,
+                            size: 28,
+                          ),
                           onPressed: _goBackToMain,
                         ),
                         const SizedBox(height: 15),
                         Container(
-                          padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+                          padding: const EdgeInsets.symmetric(
+                            horizontal: 10,
+                            vertical: 6,
+                          ),
                           decoration: BoxDecoration(
                             color: Colors.black45,
                             borderRadius: BorderRadius.circular(6),
                             border: Border.all(
-                              color: _motionType == "JOG" ? AppColors.accentGreen : AppColors.accentBlue,
+                              color: _motionType == "JOG"
+                                  ? AppColors.accentGreen
+                                  : AppColors.accentBlue,
                               width: 1.5,
                             ),
                           ),
                           child: Text(
                             "$_motionType MODE",
                             style: TextStyle(
-                              color: _motionType == "JOG" ? AppColors.accentGreen : AppColors.accentBlue,
+                              color: _motionType == "JOG"
+                                  ? AppColors.accentGreen
+                                  : AppColors.accentBlue,
                               fontWeight: FontWeight.bold,
                               fontSize: 12,
                             ),
@@ -1930,9 +2026,7 @@ Future<void> _initiateLogin() async {
                   ),
 
                   // --- CENTER: RESPONSIVE DYNAMIC D-PAD ---
-                  Center(
-                    child: _buildSingleDPad(),
-                  ),
+                  Center(child: _buildSingleDPad()),
 
                   // --- RIGHT: VERTICAL CARTESIAN / ROTATION TOGGLE ---
                   Positioned(
@@ -1950,11 +2044,17 @@ Future<void> _initiateLogin() async {
                           mainAxisSize: MainAxisSize.min,
                           children: [
                             GestureDetector(
-                              onTap: () => setState(() => _isRotationMode = false),
+                              onTap: () =>
+                                  setState(() => _isRotationMode = false),
                               child: Container(
-                                padding: const EdgeInsets.symmetric(vertical: 20, horizontal: 8),
+                                padding: const EdgeInsets.symmetric(
+                                  vertical: 20,
+                                  horizontal: 8,
+                                ),
                                 decoration: BoxDecoration(
-                                  color: !_isRotationMode ? AppColors.accentBlue : Colors.transparent,
+                                  color: !_isRotationMode
+                                      ? AppColors.accentBlue
+                                      : Colors.transparent,
                                   borderRadius: BorderRadius.circular(20),
                                 ),
                                 child: RotatedBox(
@@ -1962,7 +2062,9 @@ Future<void> _initiateLogin() async {
                                   child: Text(
                                     "CARTESIAN",
                                     style: TextStyle(
-                                      color: !_isRotationMode ? Colors.black : Colors.white,
+                                      color: !_isRotationMode
+                                          ? Colors.black
+                                          : Colors.white,
                                       fontWeight: FontWeight.bold,
                                       fontSize: 13,
                                       letterSpacing: 1,
@@ -1972,11 +2074,17 @@ Future<void> _initiateLogin() async {
                               ),
                             ),
                             GestureDetector(
-                              onTap: () => setState(() => _isRotationMode = true),
+                              onTap: () =>
+                                  setState(() => _isRotationMode = true),
                               child: Container(
-                                padding: const EdgeInsets.symmetric(vertical: 20, horizontal: 8),
+                                padding: const EdgeInsets.symmetric(
+                                  vertical: 20,
+                                  horizontal: 8,
+                                ),
                                 decoration: BoxDecoration(
-                                  color: _isRotationMode ? AppColors.accentBlue : Colors.transparent,
+                                  color: _isRotationMode
+                                      ? AppColors.accentBlue
+                                      : Colors.transparent,
                                   borderRadius: BorderRadius.circular(20),
                                 ),
                                 child: RotatedBox(
@@ -1984,7 +2092,9 @@ Future<void> _initiateLogin() async {
                                   child: Text(
                                     "ROTATION",
                                     style: TextStyle(
-                                      color: _isRotationMode ? Colors.black : Colors.white,
+                                      color: _isRotationMode
+                                          ? Colors.black
+                                          : Colors.white,
                                       fontWeight: FontWeight.bold,
                                       fontSize: 13,
                                       letterSpacing: 1,
@@ -2375,7 +2485,9 @@ Future<void> _initiateLogin() async {
           title: Text(
             "JOINTS - $_motionType",
             style: TextStyle(
-              color: _motionType == "JOG" ? AppColors.accentGreen : AppColors.accentBlue,
+              color: _motionType == "JOG"
+                  ? AppColors.accentGreen
+                  : AppColors.accentBlue,
               fontWeight: FontWeight.bold,
             ),
           ),
@@ -2406,7 +2518,11 @@ Future<void> _initiateLogin() async {
           borderRadius: BorderRadius.circular(12),
           border: Border.all(color: AppColors.border),
           boxShadow: const [
-            BoxShadow(color: Colors.black12, blurRadius: 4, offset: Offset(0, 2)),
+            BoxShadow(
+              color: Colors.black12,
+              blurRadius: 4,
+              offset: Offset(0, 2),
+            ),
           ],
         ),
         child: Row(
@@ -2415,7 +2531,11 @@ Future<void> _initiateLogin() async {
             // Flexible allows the button to expand/contract safely
             Flexible(
               flex: 2,
-              child: _buildJogButton("J$jointNum-", width: double.infinity, height: 60), 
+              child: _buildJogButton(
+                "J$jointNum-",
+                width: double.infinity,
+                height: 60,
+              ),
             ),
             Expanded(
               flex: 3,
@@ -2448,7 +2568,8 @@ Future<void> _initiateLogin() async {
                           fontFamily: 'monospace',
                           color: AppColors.accentBlue,
                           fontWeight: FontWeight.bold,
-                          fontSize: 16, // Scaled down slightly to fit smaller phones perfectly
+                          fontSize:
+                              16, // Scaled down slightly to fit smaller phones perfectly
                         ),
                       ),
                     ),
@@ -2458,7 +2579,11 @@ Future<void> _initiateLogin() async {
             ),
             Flexible(
               flex: 2,
-              child: _buildJogButton("J$jointNum+", width: double.infinity, height: 60),
+              child: _buildJogButton(
+                "J$jointNum+",
+                width: double.infinity,
+                height: 60,
+              ),
             ),
           ],
         ),
@@ -2701,7 +2826,10 @@ Future<void> _initiateLogin() async {
 
     // Dynamic Sizing based on screen height to prevent overlap on any phone
     double screenHeight = MediaQuery.of(context).size.height;
-    double btnSize = (screenHeight * 0.20).clamp(55.0, 85.0); // Adjusts beautifully to space
+    double btnSize = (screenHeight * 0.20).clamp(
+      55.0,
+      85.0,
+    ); // Adjusts beautifully to space
     double spacing = 12.0; // Increased spacing for cleaner industrial look
 
     return Row(
@@ -2719,7 +2847,12 @@ Future<void> _initiateLogin() async {
               children: [
                 _buildJogButton(left, width: btnSize, height: btnSize),
                 SizedBox(width: spacing),
-                _buildJogButton("HOME", width: btnSize, height: btnSize, isCircle: true),
+                _buildJogButton(
+                  "HOME",
+                  width: btnSize,
+                  height: btnSize,
+                  isCircle: true,
+                ),
                 SizedBox(width: spacing),
                 _buildJogButton(right, width: btnSize, height: btnSize),
               ],
@@ -2742,10 +2875,15 @@ Future<void> _initiateLogin() async {
     );
   }
 
- // --- UPDATED JOG BUTTON FACTORY ---
-  Widget _buildJogButton(String label, {double width = 65, double height = 65, bool isCircle = false}) {
+  // --- UPDATED JOG BUTTON FACTORY ---
+  Widget _buildJogButton(
+    String label, {
+    double width = 65,
+    double height = 65,
+    bool isCircle = false,
+  }) {
     Color btnColor;
-    
+
     // Exact Professional Color Mapping
     if (label == 'HOME') {
       btnColor = AppColors.accentBlue; // Center Home is Blue
@@ -2757,7 +2895,9 @@ Future<void> _initiateLogin() async {
       btnColor = AppColors.accentBlue;
     } else if (label.startsWith('J')) {
       // Joints: Negative is Red, Positive is Green
-      btnColor = label.contains('+') ? AppColors.accentGreen : AppColors.accentRed;
+      btnColor = label.contains('+')
+          ? AppColors.accentGreen
+          : AppColors.accentRed;
     } else {
       btnColor = Colors.grey;
     }
@@ -4382,7 +4522,6 @@ class _LiveExecutionSheetState extends State<LiveExecutionSheet> {
   }
 }
 
-
 // =========================================================================
 // NEW: TACTILE 3D BUTTON COMPONENT
 // =========================================================================
@@ -4439,9 +4578,10 @@ class _Tactile3DButtonState extends State<Tactile3DButton> {
         height: widget.height,
         // The container moves down via padding when pressed, simulating a push
         margin: EdgeInsets.only(
-          top: _isPressed ? 6 : 0, 
+          top: _isPressed ? 6 : 0,
           bottom: _isPressed ? 0 : 6,
-          left: 4, right: 4,
+          left: 4,
+          right: 4,
         ),
         decoration: BoxDecoration(
           color: widget.baseColor,
@@ -4451,10 +4591,7 @@ class _Tactile3DButtonState extends State<Tactile3DButton> {
               ? [] // Flat when pressed
               : [
                   // 3D Bottom Edge
-                  BoxShadow(
-                    color: darkerColor,
-                    offset: const Offset(0, 6),
-                  ),
+                  BoxShadow(color: darkerColor, offset: const Offset(0, 6)),
                   // Drop Shadow
                   const BoxShadow(
                     color: Colors.black45,

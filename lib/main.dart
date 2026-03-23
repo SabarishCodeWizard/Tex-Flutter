@@ -222,6 +222,31 @@ class _ControllerScreenState extends State<ControllerScreen> {
   List<Map<String, dynamic>> _prProgramData = []; // <-- ADD THIS LINE
   String _currentView = "MAIN";
 
+  // --- NEW: PRG MANAGEMENT STATE ---
+  bool _showGridInput =
+      false; // Toggles between Staging Table and Grid Controls
+  String _selectedInstType = "Inst";
+  String _selectedDi1 = "Di-1";
+  String _selectedDi2 = "Di-2";
+  String _selectedDigState = "Dig-state";
+  String _selectedVr1 = "Vr_1";
+  String _selectedVr2 = "Vr_2";
+  String _selectedDynamicCmd = "Com";
+
+  final TextEditingController _dynamicCmdValCtrl = TextEditingController();
+  final TextEditingController _varInputCtrl = TextEditingController();
+  final TextEditingController _prgInsertIndexCtrl = TextEditingController();
+
+  // --- STAGING DATA STATE ---
+  String _stagingName1 = "";
+  String _stagingValue1 = "";
+  String _stagingDeg1 = "";
+  String _stagingName2 = "";
+  String _stagingValue2 = "";
+  String _stagingDeg2 = "";
+  String _stagingSpeed = "";
+  String _stagingComment = "";
+
   @override
   void dispose() {
     _lockoutTimer?.cancel(); // <--- ADD THIS LINE
@@ -477,6 +502,14 @@ class _ControllerScreenState extends State<ControllerScreen> {
           if (data['staging_data'] != null) {
             _currentInstructionString =
                 data['staging_data']['instruction'] ?? "";
+            _stagingName1 = data['staging_data']['name1'] ?? "";
+            _stagingValue1 = data['staging_data']['value1'] ?? "";
+            _stagingDeg1 = data['staging_data']['deg1'] ?? "";
+            _stagingName2 = data['staging_data']['name2'] ?? "";
+            _stagingValue2 = data['staging_data']['value2'] ?? "";
+            _stagingDeg2 = data['staging_data']['deg2'] ?? "";
+            _stagingSpeed = data['staging_data']['speed'] ?? "";
+            _stagingComment = data['staging_data']['comment'] ?? "";
           }
 
           if (data['tp_file_list'] != null) {
@@ -2117,304 +2150,462 @@ class _ControllerScreenState extends State<ControllerScreen> {
     );
   }
 
-  // =========================================================================
-  // VIEW: PRG MANAGEMENT (UPDATED WITH ROLE RESTRICTIONS)
-  // =========================================================================
-  Widget _buildPrgManagementView() {
+  Widget _buildTableCell(
+    String text,
+    double width, {
+    bool isHeader = false,
+    Color? bgColor,
+  }) {
+    return Container(
+      width: width,
+      height: isHeader ? 35 : 45,
+      alignment: Alignment.center,
+      decoration: BoxDecoration(
+        color:
+            bgColor ??
+            (isHeader ? const Color(0xFFE0E0E0) : Colors.transparent),
+        border: const Border(
+          right: BorderSide(color: Color(0xFFE0E0E0), width: 1),
+          bottom: BorderSide(color: Color(0xFFE0E0E0), width: 1),
+        ),
+      ),
+      child: Text(
+        text,
+        style: TextStyle(
+          color: isHeader ? Colors.grey[800] : Colors.white,
+          fontWeight: isHeader ? FontWeight.bold : FontWeight.normal,
+          fontSize: isHeader ? 12 : 14,
+          fontFamily: isHeader ? null : 'monospace',
+        ),
+        maxLines: 1,
+        overflow: TextOverflow.ellipsis,
+      ),
+    );
+  }
+
+Widget _buildPrgManagementView() {
+    const double tableWidth = 1220; // Width for scrolling tables
+
     return Column(
       children: [
         AppBar(
-          leading: IconButton(
-            icon: const Icon(Icons.arrow_back),
-            onPressed: _goBackToMain,
-          ),
-          title: const Text(
-            "PROGRAM MANAGEMENT",
-            style: TextStyle(
-              color: AppColors.accentPurple,
-              fontWeight: FontWeight.bold,
-              fontSize: 16,
-            ),
-          ),
+          leading: IconButton(icon: const Icon(Icons.arrow_back), onPressed: _goBackToMain),
+          title: const Text("PROGRAM MANAGEMENT", style: TextStyle(color: AppColors.accentPurple, fontWeight: FontWeight.bold, fontSize: 16)),
           backgroundColor: Colors.transparent,
           elevation: 0,
         ),
         Expanded(
           child: SingleChildScrollView(
             padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 10),
-            child: Container(
-              padding: const EdgeInsets.all(20),
-              decoration: BoxDecoration(
-                color: AppColors.bgPanel,
-                borderRadius: BorderRadius.circular(10),
-                border: Border.all(color: AppColors.border),
-                boxShadow: const [
-                  BoxShadow(
-                    color: Colors.black12,
-                    blurRadius: 8,
-                    offset: Offset(0, 4),
-                  ),
-                ],
-              ),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.stretch,
-                children: [
-                  // --- Active File Display ---
-                  Row(
-                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                // --- 1. ACTIVE FILE & FILE MANAGEMENT ---
+                Container(
+                  padding: const EdgeInsets.all(15),
+                  decoration: BoxDecoration(color: AppColors.bgPanel, borderRadius: BorderRadius.circular(8), border: Border.all(color: AppColors.border)),
+                  child: Column(
                     children: [
-                      const Text(
-                        "ACTIVE FILE",
-                        style: TextStyle(
-                          color: Colors.grey,
-                          fontSize: 11,
-                          fontWeight: FontWeight.bold,
-                          letterSpacing: 1,
-                        ),
-                      ),
-                      Container(
-                        padding: const EdgeInsets.symmetric(
-                          horizontal: 10,
-                          vertical: 4,
-                        ),
-                        decoration: BoxDecoration(
-                          color: AppColors.lcdBg,
-                          borderRadius: BorderRadius.circular(4),
-                          border: Border.all(color: AppColors.border),
-                        ),
-                        child: Text(
-                          _currentPrName,
-                          style: const TextStyle(
-                            color: AppColors.accentPurple,
-                            fontSize: 14,
-                            fontWeight: FontWeight.bold,
-                            fontFamily: 'monospace',
-                          ),
-                        ),
-                      ),
-                    ],
-                  ),
-                  const SizedBox(height: 20),
-
-                  // --- PRG FILE MANAGEMENT (ROLE RESTRICTED) ---
-                  Row(
-                    children: [
-                      // NEW Button (Programmer Only)
-                      if (_activeRole == "Programmer") ...[
-                        Expanded(
-                          child: _buildColorButton(
-                            "NEW",
-                            AppColors.accentBlue,
-                            _showNewPrFileDialog,
-                            padding: 0,
-                            fontSize: 12,
-                            icon: Icons.add,
-                          ),
-                        ),
-                        const SizedBox(width: 8),
-                      ],
-
-                      // OPEN Button (Both Roles)
-                      Expanded(
-                        child: _buildColorButton(
-                          "OPEN",
-                          AppColors.accentYellow,
-                          () {
-                            _sendCommand('REFRESH_PR_FILES');
-                            Future.delayed(
-                              const Duration(milliseconds: 200),
-                              () => _showPrFileListSheet("Open"),
-                            );
-                          },
-                          padding: 0,
-                          fontSize: 12,
-                          icon: Icons.folder_open,
-                        ),
-                      ),
-
-                      // DELETE FILE Button (Programmer Only)
-                      if (_activeRole == "Programmer") ...[
-                        const SizedBox(width: 8),
-                        Expanded(
-                          child: _buildColorButton(
-                            "DELETE",
-                            AppColors.accentRed,
-                            () {
-                              _sendCommand('REFRESH_PR_FILES');
-                              Future.delayed(
-                                const Duration(milliseconds: 200),
-                                () => _showPrFileListSheet("Delete"),
-                              );
-                            },
-                            padding: 0,
-                            fontSize: 12,
-                            icon: Icons.delete,
-                          ),
-                        ),
-                      ],
-                    ],
-                  ),
-                  const SizedBox(height: 25),
-                  const Divider(color: AppColors.border, thickness: 1),
-                  const SizedBox(height: 20),
-
-                  // --- PRG EXECUTION (BOTH ROLES) ---
-                  _buildColorButton(
-                    _isCalculatingTrajectory
-                        ? "CANCEL CALCULATION"
-                        : "CALCULATE TRAJECTORY",
-                    _isCalculatingTrajectory
-                        ? AppColors.accentRed
-                        : AppColors.accentBlue,
-                    () {
-                      if (_isCalculatingTrajectory) {
-                        _sendCommand('CANCEL_CALCULATION');
-                      } else {
-                        _sendCommand('CALCULATE_TRAJECTORY');
-                      }
-                    },
-                    isActive: _isCalculatingTrajectory,
-                    icon: _isCalculatingTrajectory ? Icons.cancel : Icons.route,
-                  ),
-
-                  if (_isCalculatingTrajectory) ...[
-                    const SizedBox(height: 8),
-                    Container(
-                      padding: const EdgeInsets.symmetric(
-                        horizontal: 12,
-                        vertical: 10,
-                      ),
-                      decoration: BoxDecoration(
-                        color: AppColors.lcdBg,
-                        border: Border.all(
-                          color: AppColors.accentYellow,
-                          width: 1.5,
-                        ),
-                        borderRadius: BorderRadius.circular(6),
-                      ),
-                      child: Row(
-                        mainAxisAlignment: MainAxisAlignment.center,
-                        children: const [
-                          SizedBox(
-                            width: 16,
-                            height: 16,
-                            child: CircularProgressIndicator(
-                              color: AppColors.accentYellow,
-                              strokeWidth: 2.5,
-                            ),
-                          ),
-                          SizedBox(width: 12),
-                          Text(
-                            "GENERATING TRAJECTORY DATA...",
-                            style: TextStyle(
-                              color: AppColors.accentYellow,
-                              fontSize: 12,
-                              fontWeight: FontWeight.bold,
-                              fontFamily: 'monospace',
-                              letterSpacing: 1.2,
-                            ),
-                          ),
-                        ],
-                      ),
-                    ),
-                  ],
-                  const SizedBox(height: 15),
-
-                  // Run Program Button
-                  _buildColorButton(
-                    "RUN PROGRAM",
-                    AppColors.accentGreen,
-                    () =>
-                        _showPrgSelectionSheet("Run", _showPrgRunConfirmDialog),
-                    icon: Icons.play_arrow,
-                  ),
-
-                  // --- ROW DELETION (PROGRAMMER ONLY) ---
-                  if (_activeRole == "Programmer") ...[
-                    const SizedBox(height: 15),
-                    _buildColorButton(
-                      "DELETE INSTRUCTION",
-                      const Color(0xFFFF3D00), // Distinct Red-Orange
-                      () => _showPrgSelectionSheet(
-                        "Delete",
-                        _showDeletePrgRowConfirmDialog,
-                      ),
-                      icon: Icons.remove_circle_outline,
-                    ),
-                  ],
-
-                  const SizedBox(height: 25),
-                  const Divider(color: AppColors.border, thickness: 1),
-                  const SizedBox(height: 15),
-
-                  // --- CURRENT INSTRUCTION LIVE MONITOR ---
-                  const Text(
-                    "CURRENT INSTRUCTION",
-                    style: TextStyle(
-                      color: Colors.grey,
-                      fontSize: 11,
-                      fontWeight: FontWeight.bold,
-                      letterSpacing: 1,
-                    ),
-                  ),
-                  const SizedBox(height: 8),
-                  GestureDetector(
-                    onTap: () {
-                      showModalBottomSheet(
-                        context: context,
-                        backgroundColor: Colors.transparent,
-                        isScrollControlled: true,
-                        builder: (ctx) =>
-                            LiveExecutionSheet(this, isPrgMode: true),
-                      );
-                    },
-                    child: Container(
-                      padding: const EdgeInsets.all(12),
-                      decoration: BoxDecoration(
-                        color: AppColors.lcdBg,
-                        borderRadius: BorderRadius.circular(6),
-                        border: Border.all(color: AppColors.accentPurple),
-                      ),
-                      child: Row(
+                      Row(
+                        mainAxisAlignment: MainAxisAlignment.spaceBetween,
                         children: [
-                          CircleAvatar(
-                            backgroundColor: AppColors.btnBg,
-                            radius: 14,
-                            child: Text(
-                              _highlightedInstruction >= 0
-                                  ? "$_highlightedInstruction"
-                                  : "-",
-                              style: const TextStyle(
-                                color: Colors.white,
-                                fontSize: 12,
-                                fontWeight: FontWeight.bold,
-                              ),
-                            ),
+                          const Text("ACTIVE FILE", style: TextStyle(color: Colors.grey, fontSize: 11, fontWeight: FontWeight.bold, letterSpacing: 1)),
+                          Container(
+                            padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                            decoration: BoxDecoration(color: AppColors.lcdBg, borderRadius: BorderRadius.circular(4), border: Border.all(color: AppColors.border)),
+                            child: Text(_currentPrName, style: const TextStyle(color: AppColors.accentPurple, fontSize: 14, fontWeight: FontWeight.bold, fontFamily: 'monospace')),
                           ),
-                          const SizedBox(width: 15),
-                          Expanded(
-                            child: Text(
-                              _currentInstructionString.isNotEmpty
-                                  ? _currentInstructionString
-                                  : "Standing By...",
-                              style: const TextStyle(
-                                color: Colors.white,
-                                fontSize: 15,
-                                fontFamily: 'monospace',
-                                fontWeight: FontWeight.bold,
+                        ],
+                      ),
+                      const SizedBox(height: 15),
+                      Row(
+                        children: [
+                          if (_activeRole == "Programmer") ...[
+                            Expanded(child: _buildColorButton("NEW", AppColors.accentBlue, _showNewPrFileDialog, padding: 0, fontSize: 12, icon: Icons.add)),
+                            const SizedBox(width: 8),
+                          ],
+                          Expanded(child: _buildColorButton("OPEN", AppColors.accentYellow, () {
+                            _sendCommand('REFRESH_PR_FILES');
+                            Future.delayed(const Duration(milliseconds: 200), () => _showPrFileListSheet("Open"));
+                          }, padding: 0, fontSize: 12, icon: Icons.folder_open)),
+                          if (_activeRole == "Programmer") ...[
+                            const SizedBox(width: 8),
+                            Expanded(child: _buildColorButton("DELETE", AppColors.accentRed, () {
+                              _sendCommand('REFRESH_PR_FILES');
+                              Future.delayed(const Duration(milliseconds: 200), () => _showPrFileListSheet("Delete"));
+                            }, padding: 0, fontSize: 12, icon: Icons.delete)),
+                          ],
+                        ],
+                      ),
+                    ],
+                  ),
+                ),
+                const SizedBox(height: 15),
+
+                // --- 2. RESTORED: EXECUTION CONTROLS & LIVE MONITOR ---
+                Container(
+                  padding: const EdgeInsets.all(15),
+                  decoration: BoxDecoration(color: AppColors.bgPanel, borderRadius: BorderRadius.circular(8), border: Border.all(color: AppColors.border)),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.stretch,
+                    children: [
+                      _buildColorButton(
+                        _isCalculatingTrajectory ? "CANCEL CALCULATION" : "CALCULATE TRAJECTORY",
+                        _isCalculatingTrajectory ? AppColors.accentRed : AppColors.accentBlue,
+                        () => _sendCommand(_isCalculatingTrajectory ? 'CANCEL_CALCULATION' : 'CALCULATE_TRAJECTORY'),
+                        isActive: _isCalculatingTrajectory,
+                        icon: _isCalculatingTrajectory ? Icons.cancel : Icons.route,
+                      ),
+                      if (_isCalculatingTrajectory) ...[
+                        const SizedBox(height: 8),
+                        Container(
+                          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+                          decoration: BoxDecoration(color: AppColors.lcdBg, border: Border.all(color: AppColors.accentYellow, width: 1.5), borderRadius: BorderRadius.circular(6)),
+                          child: Row(
+                            mainAxisAlignment: MainAxisAlignment.center,
+                            children: const [
+                              SizedBox(width: 16, height: 16, child: CircularProgressIndicator(color: AppColors.accentYellow, strokeWidth: 2.5)),
+                              SizedBox(width: 12),
+                              Text("GENERATING TRAJECTORY DATA...", style: TextStyle(color: AppColors.accentYellow, fontSize: 12, fontWeight: FontWeight.bold, fontFamily: 'monospace', letterSpacing: 1.2)),
+                            ],
+                          ),
+                        ),
+                      ],
+                      const SizedBox(height: 15),
+                      Row(
+                        children: [
+                          Expanded(child: _buildColorButton("RUN PROGRAM", AppColors.accentGreen, () => _showPrgSelectionSheet("Run", _showPrgRunConfirmDialog), padding: 0, icon: Icons.play_arrow)),
+                          if (_activeRole == "Programmer") ...[
+                            const SizedBox(width: 8),
+                            Expanded(child: _buildColorButton("DELETE INST", const Color(0xFFFF3D00), () => _showPrgSelectionSheet("Delete", _showDeletePrgRowConfirmDialog), padding: 0, icon: Icons.remove_circle_outline)),
+                          ],
+                        ],
+                      ),
+                      const SizedBox(height: 20),
+                      
+                      // RESTORED: LIVE MONITOR BOX
+                      const Text("CURRENT INSTRUCTION", style: TextStyle(color: Colors.grey, fontSize: 11, fontWeight: FontWeight.bold, letterSpacing: 1)),
+                      const SizedBox(height: 8),
+                      GestureDetector(
+                        onTap: () => showModalBottomSheet(context: context, backgroundColor: Colors.transparent, isScrollControlled: true, builder: (ctx) => LiveExecutionSheet(this, isPrgMode: true)),
+                        child: Container(
+                          padding: const EdgeInsets.all(12),
+                          decoration: BoxDecoration(color: AppColors.lcdBg, borderRadius: BorderRadius.circular(6), border: Border.all(color: AppColors.accentPurple)),
+                          child: Row(
+                            children: [
+                              CircleAvatar(
+                                backgroundColor: AppColors.btnBg, radius: 14,
+                                child: Text(_highlightedInstruction >= 0 ? "$_highlightedInstruction" : "-", style: const TextStyle(color: Colors.white, fontSize: 12, fontWeight: FontWeight.bold)),
                               ),
-                            ),
+                              const SizedBox(width: 15),
+                              Expanded(
+                                child: Text(
+                                  _currentInstructionString.isNotEmpty ? _currentInstructionString : "Standing By...",
+                                  style: const TextStyle(color: Colors.white, fontSize: 15, fontFamily: 'monospace', fontWeight: FontWeight.bold),
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+                const SizedBox(height: 15),
+
+                // --- 3. PRG SCROLLING TABLE ---
+                Container(
+                  height: 250, // Fixed height for scrolling area
+                  decoration: BoxDecoration(color: AppColors.bgPanel, border: Border.all(color: AppColors.border), borderRadius: BorderRadius.circular(8)),
+                  child: SingleChildScrollView(
+                    scrollDirection: Axis.horizontal,
+                    child: SizedBox(
+                      width: tableWidth,
+                      child: Column(
+                        children: [
+                          Row(
+                            children: [
+                              _buildTableCell("S.NO", 50, isHeader: true),
+                              _buildTableCell("INST", 80, isHeader: true),
+                              _buildTableCell("NAME", 120, isHeader: true),
+                              _buildTableCell("VALUE", 200, isHeader: true),
+                              _buildTableCell("SPEED", 80, isHeader: true),
+                              _buildTableCell("DEG", 120, isHeader: true),
+                              _buildTableCell("RAD", 80, isHeader: true),
+                              _buildTableCell("TOOL", 80, isHeader: true),
+                              _buildTableCell("FRAME", 80, isHeader: true),
+                              _buildTableCell("COMMENT", 150, isHeader: true),
+                              _buildTableCell("DIST", 80, isHeader: true),
+                              _buildTableCell("TIME", 80, isHeader: true),
+                            ],
+                          ),
+                          Expanded(
+                            child: _prProgramData.isEmpty
+                                ? const Center(child: Text("No program instructions.", style: TextStyle(color: Colors.grey, fontStyle: FontStyle.italic)))
+                                : ListView.builder(
+                                    itemCount: _prProgramData.length,
+                                    itemBuilder: (ctx, i) {
+                                      final item = _prProgramData[i];
+                                      bool isHl = (i == _highlightedInstruction);
+                                      Color rowColor = isHl ? AppColors.accentPurple.withOpacity(0.3) : (i % 2 == 0 ? Colors.transparent : Colors.black12);
+
+                                      return InkWell(
+                                        onTap: () => _sendCommand('SELECT_PR_ROW', i),
+                                        child: Container(
+                                          color: rowColor,
+                                          child: Row(
+                                            children: [
+                                              _buildTableCell("${i + 1}", 50),
+                                              _buildTableCell(item['inst'] ?? item['type'] ?? "CMD", 80),
+                                              _buildTableCell(item['name'] ?? "-", 120),
+                                              _buildTableCell(item['value'] ?? item['data'] ?? "-", 200),
+                                              _buildTableCell(item['speed']?.toString() ?? "--", 80),
+                                              _buildTableCell(item['deg'] ?? "--", 120),
+                                              _buildTableCell(item['rad'] ?? "--", 80),
+                                              _buildTableCell(item['tool'] ?? "--", 80),
+                                              _buildTableCell(item['frame'] ?? "--", 80),
+                                              _buildTableCell(item['comt'] ?? "--", 150),
+                                              _buildTableCell(item['dist'] ?? "--", 80),
+                                              _buildTableCell(item['time'] ?? "--", 80),
+                                            ],
+                                          ),
+                                        ),
+                                      );
+                                    },
+                                  ),
                           ),
                         ],
                       ),
                     ),
+                  ),
+                ),
+                const SizedBox(height: 15),
+
+                // --- 4. STAGING / GRID INPUT AREA (PROGRAMMER ONLY) ---
+                if (_activeRole == "Programmer") ...[
+                  Container(
+                    decoration: BoxDecoration(color: AppColors.bgPanel, border: Border.all(color: AppColors.border), borderRadius: BorderRadius.circular(8)),
+                    padding: const EdgeInsets.all(12),
+                    child: Column(
+                      children: [
+                        Row(
+                          mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                          children: [
+                            Row(
+                              children: [
+                                Text(_showGridInput ? "GRID INPUT CONTROLS" : "STAGING TABLE", style: const TextStyle(color: AppColors.accentPurple, fontWeight: FontWeight.bold, fontSize: 13, letterSpacing: 1)),
+                                if (!_showGridInput) ...[
+                                  const SizedBox(width: 15),
+                                  ElevatedButton.icon(
+                                    style: ElevatedButton.styleFrom(backgroundColor: AppColors.btnBg, padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 0), minimumSize: const Size(0, 30)),
+                                    icon: const Icon(Icons.location_on, size: 14, color: AppColors.accentBlue),
+                                    label: const Text("Select TP Point", style: TextStyle(fontSize: 11)),
+                                    onPressed: () => _showTpSelectionSheet("Select", (index, tp) => _sendCommand('SELECT_TP_INDEX', index)), // <-- Selects the point to load to Staging
+                                  )
+                                ]
+                              ],
+                            ),
+                            IconButton(
+                              icon: Icon(_showGridInput ? Icons.table_rows : Icons.grid_view, color: AppColors.accentYellow),
+                              onPressed: () => setState(() => _showGridInput = !_showGridInput),
+                            )
+                          ],
+                        ),
+                        const SizedBox(height: 10),
+                        _showGridInput ? _buildGridInputControls() : _buildStagingTableDisplay(),
+                      ],
+                    ),
+                  )
+                ]
+              ],
+            ),
+          ),
+        ),
+      ],
+    );
+  }
+  Widget _buildStagingTableDisplay() {
+    return Column(
+      children: [
+        Container(
+          height: 82, // Height for Header + Data + borders
+          decoration: BoxDecoration(color: AppColors.lcdBg, border: Border.all(color: AppColors.border), borderRadius: BorderRadius.circular(6)),
+          child: SingleChildScrollView(
+            scrollDirection: Axis.horizontal,
+            child: SizedBox(
+              width: 1160, // Total width of staging columns
+              child: Column(
+                children: [
+                  Row(
+                    children: [
+                      _buildTableCell("INST", 80, isHeader: true),
+                      _buildTableCell("NAME 1", 120, isHeader: true),
+                      _buildTableCell("VALUE 1", 180, isHeader: true),
+                      _buildTableCell("DEG 1", 180, isHeader: true),
+                      _buildTableCell("NAME 2", 120, isHeader: true),
+                      _buildTableCell("VALUE 2", 180, isHeader: true),
+                      _buildTableCell("DEG 2", 180, isHeader: true),
+                      _buildTableCell("SPEED", 80, isHeader: true),
+                      _buildTableCell("CMT", 120, isHeader: true),
+                    ],
+                  ),
+                  Row(
+                    children: [
+                      _buildTableCell(_currentInstructionString.isNotEmpty ? _currentInstructionString : "-", 80, bgColor: AppColors.bgMain),
+                      _buildTableCell(_stagingName1.isNotEmpty ? _stagingName1 : "-", 120, bgColor: AppColors.bgMain),
+                      _buildTableCell(_stagingValue1.isNotEmpty ? _stagingValue1 : "-", 180, bgColor: AppColors.bgMain),
+                      _buildTableCell(_stagingDeg1.isNotEmpty ? _stagingDeg1 : "-", 180, bgColor: AppColors.bgMain),
+                      _buildTableCell(_stagingName2.isNotEmpty ? _stagingName2 : "-", 120, bgColor: AppColors.bgMain),
+                      _buildTableCell(_stagingValue2.isNotEmpty ? _stagingValue2 : "-", 180, bgColor: AppColors.bgMain),
+                      _buildTableCell(_stagingDeg2.isNotEmpty ? _stagingDeg2 : "-", 180, bgColor: AppColors.bgMain),
+                      _buildTableCell(_stagingSpeed.isNotEmpty ? _stagingSpeed : "-", 80, bgColor: AppColors.bgMain),
+                      _buildTableCell(_stagingComment.isNotEmpty ? _stagingComment : "-", 120, bgColor: AppColors.bgMain),
+                    ],
                   ),
                 ],
               ),
             ),
           ),
         ),
+        const SizedBox(height: 15),
+        Row(
+          children: [
+            SizedBox(
+              width: 80,
+              child: TextField(
+                controller: _prgInsertIndexCtrl,
+                style: const TextStyle(fontSize: 13, color: Colors.white, fontWeight: FontWeight.bold),
+                decoration: const InputDecoration(hintText: "S.No", filled: true, fillColor: AppColors.lcdBg, isDense: true, contentPadding: EdgeInsets.all(12)),
+                keyboardType: TextInputType.number,
+              )
+            ),
+            const SizedBox(width: 8),
+            Expanded(child: _buildColorButton("➕ INSERT TO PROGRAM", AppColors.accentPurple, () {
+              int idx = int.tryParse(_prgInsertIndexCtrl.text) ?? -1;
+              if (idx > 0) _sendCommand('INSERT_PR_INSTRUCTION_AT', idx - 1);
+              else _sendCommand('INSERT_PR_INSTRUCTION');
+              _prgInsertIndexCtrl.clear();
+            }, padding: 0, fontSize: 13)),
+          ],
+        )
       ],
+    );
+  }
+
+  Widget _buildGridInputControls() {
+    return Column(
+      children: [
+        Row(
+          children: [
+            Expanded(child: _buildMiniDropdown(_selectedInstType, ["Inst", "MOVJ", "MOVL", "MOVC", "DI-1", "DO-1"], (v) {
+              setState(() => _selectedInstType = v);
+              _sendCommand('SET_INSTRUCTION_TYPE', v);
+            })),
+            const SizedBox(width: 5),
+            Expanded(child: _buildMiniDropdown(_selectedDi1, ["Di-1", "D-1", "D-2", "D-3"], (v) {
+              setState(() => _selectedDi1 = v);
+              _sendCommand('SET_DIGI_1', v);
+            })),
+            const SizedBox(width: 5),
+            Expanded(child: _buildMiniDropdown(_selectedDi2, ["Di-2", "D-1", "D-2", "D-3"], (v) {
+              setState(() => _selectedDi2 = v);
+              _sendCommand('SET_DIGI_2', v);
+            })),
+            const SizedBox(width: 5),
+            Expanded(child: _buildColorButton("H/L", const Color(0xFF607D8B), () => _sendCommand('CONFIRM_HIGH_LOW'), padding: 0, fontSize: 11)),
+            const SizedBox(width: 5),
+            Expanded(child: _buildColorButton("Op Pg", const Color(0xFF607D8B), (){}, padding: 0, fontSize: 11)),
+          ],
+        ),
+        const SizedBox(height: 10),
+        Row(
+          children: [
+            Expanded(child: _buildMiniDropdown(_selectedDigState, ["Dig-state", "High", "Low"], (v) {
+              setState(() => _selectedDigState = v);
+              _sendCommand('SET_HIGH_LOW', v);
+            })),
+            const SizedBox(width: 5),
+            Expanded(child: _buildMiniDropdown(_selectedVr1, ["Vr_1", "V-1", "V-2", "AI-1"], (v) {
+              setState(() => _selectedVr1 = v);
+              _sendCommand('SET_VAR1', v);
+            })),
+            const SizedBox(width: 5),
+            Expanded(child: TextField(
+              controller: _varInputCtrl,
+              style: const TextStyle(fontSize: 12, color: Colors.black),
+              decoration: const InputDecoration(filled: true, fillColor: Colors.white, isDense: true, contentPadding: EdgeInsets.all(8)),
+              onSubmitted: (v) => _sendCommand('SET_VAR_VAL', v),
+            )),
+            const SizedBox(width: 5),
+            Expanded(child: _buildMiniDropdown(_selectedVr2, ["Vr_2", "V-1", "V-2"], (v) {
+              setState(() => _selectedVr2 = v);
+              _sendCommand('SET_VAR2', v);
+            })),
+            const SizedBox(width: 5),
+            Expanded(child: _buildColorButton("AN op", const Color(0xFF607D8B), (){}, padding: 0, fontSize: 11)),
+          ],
+        ),
+        const SizedBox(height: 10),
+        const Divider(color: AppColors.border),
+        Row(
+          children: [
+            Expanded(flex: 2, child: _buildMiniDropdown(_selectedDynamicCmd, ["Com", "Delay", "Go to", "Loop", "Speed"], (v) {
+              setState(() => _selectedDynamicCmd = v);
+            })),
+            const SizedBox(width: 5),
+            Expanded(flex: 3, child: TextField(
+              controller: _dynamicCmdValCtrl,
+              style: const TextStyle(fontSize: 12, color: Colors.black),
+              decoration: const InputDecoration(hintText: "Value", filled: true, fillColor: Colors.white, isDense: true, contentPadding: EdgeInsets.all(8)),
+            )),
+            const SizedBox(width: 5),
+            Expanded(flex: 2, child: _buildColorButton("APPLY", AppColors.accentGreen, () {
+              String cmd = _selectedDynamicCmd;
+              String val = _dynamicCmdValCtrl.text;
+              if (val.isEmpty) return;
+              if (cmd == "Com") _sendCommand('SET_PROGRAM_COMMENT', val);
+              else if (cmd == "Delay") _sendCommand('SET_DELAY', val);
+              else if (cmd == "Go to") _sendCommand('SET_GOTO_PROGRAM', val);
+              else if (cmd == "Loop") _sendCommand('SET_LOOP', val);
+              else if (cmd == "Speed") _sendCommand('SET_PROGRAM_SPEED', val);
+              _dynamicCmdValCtrl.clear();
+            }, padding: 0, fontSize: 12)),
+          ],
+        ),
+      ],
+    );
+  }
+  Widget _buildMiniDropdown(
+    String value,
+    List<String> items,
+    Function(String) onChanged,
+  ) {
+    if (!items.contains(value)) items.insert(0, value);
+    return Container(
+      height: 30,
+      padding: const EdgeInsets.symmetric(horizontal: 4),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(4),
+      ),
+      child: DropdownButtonHideUnderline(
+        child: DropdownButton<String>(
+          value: value,
+          isExpanded: true,
+          dropdownColor: Colors.white,
+          style: const TextStyle(
+            color: Colors.black,
+            fontSize: 11,
+            fontWeight: FontWeight.bold,
+          ),
+          items: items
+              .map((val) => DropdownMenuItem(value: val, child: Text(val)))
+              .toList(),
+          onChanged: (v) {
+            if (v != null) onChanged(v);
+          },
+        ),
+      ),
     );
   }
 
@@ -3302,12 +3493,21 @@ class _ControllerScreenState extends State<ControllerScreen> {
     String actionTitle,
     Function(int index, Map<String, dynamic> tp) onSelect,
   ) {
-    IconData getIcon() => actionTitle == "Modify"
-        ? Icons.edit
-        : (actionTitle == "Run" ? Icons.play_arrow : Icons.delete);
-    Color getColor() => actionTitle == "Modify"
-        ? AppColors.accentBlue
-        : (actionTitle == "Run" ? AppColors.accentGreen : AppColors.accentRed);
+    IconData getIcon() {
+      if (actionTitle == "Modify") return Icons.edit;
+      if (actionTitle == "Run") return Icons.play_arrow;
+      if (actionTitle == "Select")
+        return Icons.add_circle; // <-- FIXED: Shows Add icon for selection
+      return Icons.delete;
+    }
+
+    Color getColor() {
+      if (actionTitle == "Modify") return AppColors.accentBlue;
+      if (actionTitle == "Run") return AppColors.accentGreen;
+      if (actionTitle == "Select")
+        return AppColors.accentPurple; // <-- FIXED: Shows Purple for selection
+      return AppColors.accentRed;
+    }
 
     showModalBottomSheet(
       context: context,
@@ -3387,7 +3587,10 @@ class _ControllerScreenState extends State<ControllerScreen> {
                           ),
                           onTap: () {
                             Navigator.pop(ctx);
-                            onSelect(i, tp);
+                            onSelect(
+                              i,
+                              tp,
+                            ); // Triggers the selection to load into Staging
                           },
                         );
                       },
